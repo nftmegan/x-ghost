@@ -1,0 +1,1206 @@
+Generating project snapshot...
+Date: Thu 11 Dec 12:18:42 WET 2025
+
+################################################################################
+### PROJECT STRUCTURE
+################################################################################
+.
+./dashboard
+./dashboard/dashboard.js
+./dashboard/dashboard.html
+./dashboard/dashboard.css
+./pack_code.sh
+./assets
+./assets/icon48.png
+./assets/icon128.png
+./assets/icon16.png
+./background
+./background/background.js
+./background/input_sim.js
+./popup
+./popup/popup.js
+./popup/popup.html
+./popup/popup.css
+./current_code_state.txt
+./content
+./content/content.js
+./lib
+./lib/utils.js
+./lib/database.js
+./lib/selectors.js
+./lib/config.js
+./manifest.json
+
+
+################################################################################
+### FILE CONTENTS
+################################################################################
+
+================================================================================
+START FILE: ./dashboard/dashboard.js
+================================================================================
+import { dbService } from '../lib/database.js';
+
+document.addEventListener('DOMContentLoaded', async () => {
+    setupTabs();
+    await loadConfig();
+    await loadDatabase();
+
+    // Event Listeners
+    document.getElementById('btn-save-config').addEventListener('click', saveConfig);
+    document.getElementById('btn-refresh').addEventListener('click', loadDatabase);
+    document.getElementById('btn-clear').addEventListener('click', async () => {
+        if(confirm("Clear entire database?")) {
+            await dbService.clear();
+            loadDatabase();
+        }
+    });
+});
+
+// --- TABS ---
+function setupTabs() {
+    const items = document.querySelectorAll('.menu-item');
+    items.forEach(item => {
+        item.addEventListener('click', () => {
+            // Remove active classes
+            document.querySelectorAll('.menu-item').forEach(i => i.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            
+            // Activate clicked
+            item.classList.add('active');
+            const tabId = item.getAttribute('data-tab');
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+        });
+    });
+}
+
+// --- CONFIGURATION ---
+async function loadConfig() {
+    const data = await chrome.storage.local.get("config");
+    // Merge with defaults from lib/config.js (loaded in html)
+    const config = { ...DEFAULT_CONFIG, ...(data.config || {}) };
+
+    document.getElementById('conf-enableActions').checked = config.enableActions;
+    document.getElementById('conf-simulationMode').checked = config.simulationMode;
+    document.getElementById('conf-keywords').value = (config.keywords || []).join(", ");
+    document.getElementById('conf-replies').value = (config.replies || []).join("\n");
+    document.getElementById('conf-followLimit').value = config.followLimitCount;
+    document.getElementById('conf-maxActions').value = config.maxActionsPerSession;
+}
+
+async function saveConfig() {
+    const data = await chrome.storage.local.get("config");
+    const current = data.config || DEFAULT_CONFIG;
+
+    const newConfig = {
+        ...current,
+        enableActions: document.getElementById('conf-enableActions').checked,
+        simulationMode: document.getElementById('conf-simulationMode').checked,
+        keywords: document.getElementById('conf-keywords').value.split(',').map(s => s.trim()).filter(s => s),
+        replies: document.getElementById('conf-replies').value.split('\n').map(s => s.trim()).filter(s => s),
+        followLimitCount: parseInt(document.getElementById('conf-followLimit').value) || 15,
+        maxActionsPerSession: parseInt(document.getElementById('conf-maxActions').value) || 20
+    };
+
+    await chrome.storage.local.set({ config: newConfig });
+    alert("Configuration Saved!");
+}
+
+// --- DATABASE ---
+async function loadDatabase() {
+    const tbody = document.getElementById('table-body');
+    tbody.innerHTML = '<tr><td colspan="5">Loading...</td></tr>';
+    
+    try {
+        const records = await dbService.getAll();
+        tbody.innerHTML = '';
+        if (records.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5">No actions recorded.</td></tr>';
+            return;
+        }
+
+        records.forEach(row => {
+            const tr = document.createElement('tr');
+            const date = new Date(row.timestamp).toLocaleTimeString();
+            const statusClass = `status-${row.status.toLowerCase()}`;
+            const details = `Reply: "${row.details.replyText || ''}"`;
+
+            tr.innerHTML = `
+                <td>${date}</td>
+                <td>${row.type}</td>
+                <td class="${statusClass}"><strong>${row.status}</strong></td>
+                <td><a href="${row.targetUrl}" target="_blank" style="color:#1d9bf0">Link</a></td>
+                <td>${details}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="5" style="color:red">Error: ${e.message}</td></tr>`;
+    }
+}
+END FILE: ./dashboard/dashboard.js
+
+
+================================================================================
+START FILE: ./dashboard/dashboard.html
+================================================================================
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Ghost Bot Dashboard</title>
+    <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+    <div class="app-container">
+        <nav class="sidebar">
+            <div class="logo">Ghost Bot</div>
+            <ul class="menu">
+                <li class="menu-item active" data-tab="config">⚙️ Configuration</li>
+                <li class="menu-item" data-tab="database">📊 Database</li>
+            </ul>
+        </nav>
+
+        <main class="content">
+            
+            <section id="tab-config" class="tab-content active">
+                <h2>Configuration</h2>
+                
+                <div class="card">
+                    <h3>Modes</h3>
+                    <div class="row">
+                        <label>
+                            <input type="checkbox" id="conf-enableActions"> 
+                            <strong>Active Mode</strong> (Posts, Likes, Follows)
+                        </label>
+                    </div>
+                    <div class="row">
+                        <label>
+                            <input type="checkbox" id="conf-simulationMode"> 
+                            <span style="color:orange">Simulation Mode</span> (UI Only, No Actions)
+                        </label>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Targeting</h3>
+                    <div class="form-group">
+                        <label>Keywords (CSV)</label>
+                        <input type="text" id="conf-keywords" placeholder="gm, good morning">
+                    </div>
+                    <div class="form-group">
+                        <label>Replies (One per line)</label>
+                        <textarea id="conf-replies" rows="6"></textarea>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Safety Limits</h3>
+                    <div class="row">
+                        <label>Follows per 30 mins: <input type="number" id="conf-followLimit" style="width:50px"></label>
+                    </div>
+                    <div class="row">
+                        <label>Max Actions per Session: <input type="number" id="conf-maxActions" style="width:50px"></label>
+                    </div>
+                </div>
+
+                <button id="btn-save-config" class="btn primary">Save Configuration</button>
+            </section>
+
+            <section id="tab-database" class="tab-content">
+                <h2>Action Database</h2>
+                <div class="controls">
+                    <button id="btn-refresh" class="btn secondary">Refresh</button>
+                    <button id="btn-clear" class="btn danger">Clear All</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Target</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body">
+                        </tbody>
+                </table>
+            </section>
+
+        </main>
+    </div>
+
+    <script src="../lib/config.js"></script>
+    <script type="module" src="dashboard.js"></script>
+</body>
+</html>
+END FILE: ./dashboard/dashboard.html
+
+
+================================================================================
+START FILE: ./dashboard/dashboard.css
+================================================================================
+body { margin: 0; padding: 0; background: #121212; color: #e0e0e0; font-family: system-ui, sans-serif; height: 100vh; display: flex; }
+.app-container { display: flex; width: 100%; }
+
+/* SIDEBAR */
+.sidebar { width: 250px; background: #1e1e1e; border-right: 1px solid #333; display: flex; flex-direction: column; }
+.logo { padding: 20px; font-size: 18px; font-weight: bold; border-bottom: 1px solid #333; color: #fff; }
+.menu { list-style: none; padding: 0; margin: 0; }
+.menu-item { padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #2a2a2a; transition: background 0.2s; }
+.menu-item:hover { background: #2a2a2a; }
+.menu-item.active { background: #333; border-left: 4px solid #1d9bf0; }
+
+/* CONTENT */
+.content { flex: 1; padding: 30px; overflow-y: auto; }
+h2 { margin-top: 0; border-bottom: 1px solid #333; padding-bottom: 10px; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* CARDS */
+.card { background: #1e1e1e; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; }
+.row { margin-bottom: 10px; }
+.form-group { margin-bottom: 15px; display: flex; flex-direction: column; }
+.form-group label { margin-bottom: 5px; font-weight: bold; font-size: 13px; color: #aaa; }
+
+/* INPUTS */
+input[type="text"], input[type="number"], textarea { background: #333; border: 1px solid #444; color: white; padding: 8px; border-radius: 4px; }
+textarea { resize: vertical; }
+
+/* BUTTONS */
+.btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-right: 10px; }
+
+/* Primary Action (Twitter Blue) */
+.primary { background: #1d9bf0; color: white; }
+.primary:hover { background: #1a8cd8; }
+
+/* Secondary Action (High Contrast White) */
+.secondary { background: #eff3f4; color: #0f1419; }
+.secondary:hover { background: #d3d3d3; }
+
+.danger { background: #f4212e; color: white; }
+
+/* TABLE */
+table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+th, td { border: 1px solid #333; padding: 10px; text-align: left; font-size: 13px; }
+th { background-color: #222; }
+tr:nth-child(even) { background-color: #1a1a1a; }
+.status-executed { color: #0f0; }
+.status-simulated, .status-dry_run { color: #ffa500; }
+.status-failed { color: #f00; }
+END FILE: ./dashboard/dashboard.css
+
+
+================================================================================
+START FILE: ./background/background.js
+================================================================================
+import { sendClick, sendKeystrokes, sendSpecialKey, moveMouse } from './input_sim.js';
+import { dbService } from '../lib/database.js';
+
+function getRandomInt(min, max) { return Math.floor(Math.random() * (max - min + 1) + min); }
+async function logSys(msg) {
+    const timestamp = new Date().toLocaleTimeString();
+    const entry = `[${timestamp}] [SYSTEM] ${msg}`;
+    console.log(entry);
+    const data = await chrome.storage.local.get("logs");
+    let logs = data.logs || [];
+    logs.unshift(entry);
+    if (logs.length > 50) logs.pop();
+    await chrome.storage.local.set({ logs: logs });
+}
+
+const TARGET_URL = "https://x.com/home";
+const DECOY_URLS = ["https://www.google.com", "https://news.ycombinator.com"];
+
+chrome.runtime.onInstalled.addListener(() => {
+    chrome.storage.local.set({ state: "IDLE", logs: [] });
+    logSys("👻 Ghost Bot Installed. DB Ready.");
+});
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarm.name === "switchState") {
+        await toggleCycle();
+    }
+});
+
+async function toggleCycle() {
+    const data = await chrome.storage.local.get(["state", "config"]);
+    const config = data.config || {}; 
+    const currentState = data.state;
+
+    if (currentState === "WORKING") {
+        await logSys("🌙 Shift finished. Closing Twitter. Entering Sleep Mode.");
+        const tabs = await chrome.tabs.query({ url: "*://*.x.com/*" });
+        if (tabs.length > 0) await chrome.tabs.remove(tabs.map(t => t.id));
+
+        const decoy = DECOY_URLS[getRandomInt(0, DECOY_URLS.length - 1)];
+        await chrome.tabs.create({ url: decoy, active: true });
+
+        const sleepTime = getRandomInt(config.sleepCycleMin || 5, config.sleepCycleMax || 15);
+        await chrome.storage.local.set({ state: "SLEEPING" });
+        chrome.alarms.create("switchState", { delayInMinutes: sleepTime });
+        await logSys(`⏳ Sleeping for ${sleepTime} minutes.`);
+
+    } else {
+        await logSys("☀️ Break over. Starting Work Cycle.");
+        const existingTabs = await chrome.tabs.query({ url: ["*://x.com/*", "*://twitter.com/*"] });
+        
+        if (existingTabs.length > 0) {
+            const tabId = existingTabs[0].id;
+            await chrome.tabs.update(tabId, { active: true });
+            
+            console.log("Found existing tab. Waking up content script...");
+            chrome.tabs.sendMessage(tabId, { action: "START_BOT" }).catch(() => {
+                console.log("Script unresponsive. Reloading tab as fallback.");
+                chrome.tabs.reload(tabId);
+            });
+
+        } else {
+            await chrome.tabs.create({ url: TARGET_URL, active: true });
+        }
+
+        const workTime = getRandomInt(config.workCycleMin || 15, config.workCycleMax || 45);
+        await chrome.storage.local.set({ state: "WORKING" });
+        chrome.alarms.create("switchState", { delayInMinutes: workTime });
+        await logSys(`🔨 Working for ${workTime} minutes.`);
+    }
+}
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    
+    if (request.action === "START_BOT") {
+        logSys("🚀 Manual Start Initiated.");
+        chrome.storage.local.set({ state: "IDLE" }).then(toggleCycle);
+    }
+    
+    if (request.action === "STOP_BOT") {
+        logSys("🛑 Manual Stop Initiated.");
+        chrome.alarms.clearAll();
+        chrome.storage.local.set({ state: "IDLE" });
+
+        chrome.tabs.query({ url: ["*://x.com/*", "*://twitter.com/*"] }, (tabs) => {
+            for (const tab of tabs) {
+                chrome.tabs.sendMessage(tab.id, { action: "STOP_BOT" }).catch(() => {});
+            }
+        });
+    }
+
+    if (request.action === "simulateClick") {
+        sendClick(sender.tab.id, request.x, request.y);
+    }
+
+    // --- NEW: MOVE MOUSE WITHOUT CLICKING ---
+    if (request.action === "moveMouse") {
+        moveMouse(sender.tab.id, request.x, request.y);
+    }
+    
+    if (request.action === "sendKey") {
+        sendSpecialKey(sender.tab.id, request.key);
+    }
+
+    if (request.action === "typeText") {
+        sendKeystrokes(sender.tab.id, request.text);
+    }
+
+    if (request.action === "logAction") {
+        logSys(`🤖 [ACTION] ${request.message}`);
+    }
+
+    if (request.action === "SAVE_DB_ENTRY") {
+        logSys(`💾 Database Write: ${request.data.type} (${request.data.status})`);
+        dbService.add(request.data)
+            .then(() => console.log("DB Write Success"))
+            .catch(err => console.error("DB Write Failed", err));
+    }
+});
+END FILE: ./background/background.js
+
+
+================================================================================
+START FILE: ./background/input_sim.js
+================================================================================
+// background/input_sim.js
+
+let virtualMouse = { x: 100, y: 100 };
+
+// Persist mouse state
+chrome.storage.session.get("virtualMouse", (data) => {
+    if (data.virtualMouse) virtualMouse = data.virtualMouse;
+});
+
+async function updateMouseState(x, y) {
+    virtualMouse = { x, y };
+    await chrome.storage.session.set({ virtualMouse });
+}
+
+export async function attachDebugger(tabId) {
+    return new Promise((resolve) => {
+        chrome.debugger.attach({ tabId }, "1.3", () => {
+            if (chrome.runtime.lastError && !chrome.runtime.lastError.message.includes("already attached")) {
+                // Ignore
+            }
+            resolve();
+        });
+    });
+}
+
+function cubicBezier(t, p0, p1, p2, p3) {
+    const oneMinusT = 1 - t;
+    return (
+        Math.pow(oneMinusT, 3) * p0 +
+        3 * Math.pow(oneMinusT, 2) * t * p1 +
+        3 * oneMinusT * Math.pow(t, 2) * p2 +
+        Math.pow(t, 3) * p3
+    );
+}
+
+export async function moveMouse(tabId, toX, toY) {
+    const fromX = virtualMouse.x;
+    const fromY = virtualMouse.y;
+
+    // Control points for curve
+    const control1X = fromX + (Math.random() * (toX - fromX)) * 0.5;
+    const control1Y = fromY + (Math.random() * (toY - fromY)) * 0.2;
+    const control2X = fromX + (Math.random() * (toX - fromX)) * 0.8;
+    const control2Y = toY + (Math.random() * (toY - fromY)) * 0.5;
+
+    const distance = Math.sqrt(Math.pow(toX - fromX, 2) + Math.pow(toY - fromY, 2));
+    const steps = Math.max(10, Math.floor(distance / 15));
+
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        
+        // NO TREMOR - Clean Math
+        const x = cubicBezier(t, fromX, control1X, control2X, toX);
+        const y = cubicBezier(t, fromY, control1Y, control2Y, toY);
+
+        // Send Event to Chrome Debugger
+        await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
+            type: "mouseMoved", x: x, y: y, button: "none", clickCount: 0
+        }).catch(() => {});
+
+        // --- VISUALIZATION: Send coordinates to Content Script to draw the Red Dot ---
+        chrome.tabs.sendMessage(tabId, { action: "drawCursor", x, y }).catch(() => {});
+
+        await new Promise(r => setTimeout(r, 10));
+    }
+    
+    await updateMouseState(toX, toY);
+}
+
+export async function sendClick(tabId, x, y) {
+    try {
+        await attachDebugger(tabId);
+        await moveMouse(tabId, x, y);
+        
+        // Click Down
+        await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+        
+        // Visual Feedback (Make dot Green on click)
+        chrome.tabs.sendMessage(tabId, { action: "drawClick", x, y }).catch(() => {});
+
+        await new Promise(r => setTimeout(r, 100)); // Solid 100ms click
+        
+        // Click Up
+        await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+
+    } catch (e) {
+        console.error("Debug Click Failed:", e);
+    }
+}
+
+export async function sendSpecialKey(tabId, keyName) {
+    try {
+        await attachDebugger(tabId);
+        let definition = { key: keyName, code: keyName, text: "" };
+        
+        if (keyName === "Enter") definition = { key: "Enter", code: "Enter", text: "\r" };
+        if (keyName === "Escape") definition = { key: "Escape", code: "Escape", text: "" };
+        if (keyName === "ArrowDown") definition = { key: "ArrowDown", code: "ArrowDown", text: "" };
+        if (keyName === "ArrowUp") definition = { key: "ArrowUp", code: "ArrowUp", text: "" };
+
+        await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", { type: "keyDown", ...definition });
+        await new Promise(r => setTimeout(r, 100));
+        await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", { type: "keyUp", ...definition });
+    } catch (e) {
+        console.error("Debug Key Failed:", e);
+    }
+}
+
+export async function sendKeystrokes(tabId, text) {
+    try {
+        await attachDebugger(tabId);
+        for (const char of text) {
+            const code = `Key${char.toUpperCase()}`;
+            await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", { type: "keyDown", text: char, unmodifiedText: char, key: char, code: code });
+            await new Promise(r => setTimeout(r, 50));
+            await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", { type: "keyUp", text: char, unmodifiedText: char, key: char, code: code });
+            await new Promise(r => setTimeout(r, 50));
+        }
+    } catch (e) {
+        console.error("Debug Type Failed:", e);
+    }
+}
+END FILE: ./background/input_sim.js
+
+
+================================================================================
+START FILE: ./popup/popup.js
+================================================================================
+document.addEventListener('DOMContentLoaded', async () => {
+    const data = await chrome.storage.local.get(["state", "logs"]);
+    updateUI(data.state);
+    renderLogs(data.logs || []);
+    checkTargetTabs(data.state); // Check on load
+
+    // HANDLERS
+    document.getElementById("btn-toggle-cycle").addEventListener("click", async () => {
+        const btn = document.getElementById("btn-toggle-cycle");
+        
+        // Don't allow click if disabled
+        if (btn.disabled) return;
+
+        if (btn.innerText.includes("Start")) {
+            chrome.runtime.sendMessage({ action: "START_BOT" });
+            updateUI("WORKING");
+        } else {
+            chrome.runtime.sendMessage({ action: "STOP_BOT" });
+            updateUI("IDLE");
+        }
+    });
+
+    document.getElementById("btn-dashboard").addEventListener("click", () => {
+        chrome.tabs.create({ url: "dashboard/dashboard.html" });
+    });
+
+    // POLLING
+    setInterval(async () => {
+        const d = await chrome.storage.local.get(["state", "logs"]);
+        updateUI(d.state);
+        renderLogs(d.logs);
+        checkTargetTabs(d.state); // Continuously check tabs
+    }, 2000);
+});
+
+async function checkTargetTabs(currentState) {
+    const btn = document.getElementById("btn-toggle-cycle");
+    
+    // Only apply restriction if bot is IDLE. 
+    // If it's WORKING, we allow Stop even if tabs are closed (to reset state).
+    if (currentState === "WORKING") {
+        btn.disabled = false;
+        btn.style.opacity = "1";
+        btn.style.cursor = "pointer";
+        return;
+    }
+
+    const tabs = await chrome.tabs.query({ url: ["*://x.com/*", "*://twitter.com/*"] });
+    
+    if (tabs.length === 0) {
+        btn.disabled = true;
+        btn.innerText = "Open X to Start";
+        btn.style.opacity = "0.5";
+        btn.style.cursor = "not-allowed";
+        btn.className = "btn primary"; // Reset color to neutral/primary
+    } else {
+        btn.disabled = false;
+        // Text is handled by updateUI
+        btn.style.opacity = "1";
+        btn.style.cursor = "pointer";
+    }
+}
+
+function updateUI(state) {
+    const statusEl = document.getElementById("status-indicator");
+    const btn = document.getElementById("btn-toggle-cycle");
+    
+    statusEl.innerText = state || "IDLE";
+    statusEl.className = (state === "WORKING") ? "status-on" : "status-off";
+
+    // Only update text/class if button is enabled (tabs exist)
+    if (!btn.disabled) {
+        if (state === "WORKING") {
+            btn.innerText = "Stop Cycle";
+            btn.className = "btn danger";
+        } else {
+            btn.innerText = "Start Cycle";
+            btn.className = "btn primary";
+        }
+    }
+}
+
+function renderLogs(logs) {
+    const container = document.getElementById("log-window");
+    if (!logs || logs.length === 0) {
+        container.innerHTML = '<div class="log-entry" style="color:#666">No logs yet...</div>';
+        return;
+    }
+    container.innerHTML = logs.map(l => `<div class="log-entry">${l}</div>`).join("");
+}
+END FILE: ./popup/popup.js
+
+
+================================================================================
+START FILE: ./popup/popup.html
+================================================================================
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container" style="text-align:center; padding-top:10px;">
+        <header>
+            <h1 style="justify-content:center">Ghost Bot</h1>
+            <div id="status-indicator" class="status-off">IDLE</div>
+        </header>
+
+        <div class="controls" style="margin-top:20px;">
+            <button id="btn-toggle-cycle" class="btn primary" style="width:100%">Start Cycle</button>
+        </div>
+        
+        <div class="controls">
+             <button id="btn-dashboard" class="btn secondary" style="width:100%;">Open Dashboard</button>
+        </div>
+
+        <div class="logs-panel" style="margin-top:20px; text-align:left;">
+            <h3>Recent Activity</h3>
+            <div id="log-window"></div>
+        </div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>
+END FILE: ./popup/popup.html
+
+
+================================================================================
+START FILE: ./popup/popup.css
+================================================================================
+body { background-color: #121212; color: #e0e0e0; font-family: sans-serif; width: 320px; padding: 10px; }
+h1 { font-size: 16px; margin: 0; display: flex; justify-content: space-between; align-items: center; }
+.status-off { color: #777; font-size: 12px; border: 1px solid #555; padding: 2px 6px; border-radius: 4px; }
+.status-on { color: #0f0; border-color: #0f0; }
+
+.controls { display: flex; gap: 10px; margin: 15px 0; }
+.btn { flex: 1; padding: 10px; border: none; border-radius: 20px; cursor: pointer; font-weight: bold; font-size: 14px; }
+
+/* Primary Action (Twitter Blue) */
+.primary { background: #1d9bf0; color: white; }
+.primary:hover { background: #1a8cd8; }
+
+/* Secondary Action (High Contrast White) - Looks Active! */
+.secondary { background: #eff3f4; color: #0f1419; }
+.secondary:hover { background: #d3d3d3; }
+
+.danger { background: #f4212e; color: white; }
+
+/* Disabled State (Explicitly Grey/Faded) */
+.btn:disabled {
+    background-color: #333 !important;
+    color: #777 !important;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.settings-panel { background: #1e1e1e; padding: 10px; border-radius: 6px; margin-bottom: 10px; }
+.row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px; }
+input[type="text"] { background: #333; border: none; color: white; padding: 4px; border-radius: 4px; width: 60%; }
+
+.logs-panel { background: #000; padding: 5px; border-radius: 6px; height: 150px; overflow-y: auto; font-family: monospace; font-size: 11px; }
+.log-entry { border-bottom: 1px solid #222; padding: 2px 0; }
+END FILE: ./popup/popup.css
+
+
+================================================================================
+START FILE: ./content/content.js
+================================================================================
+// content/content.js - Visual Debug Mode
+
+let isRunning = false;
+let processedTweets = new Set();
+let sessionActionCount = 0;
+let ghostCursor = null;
+
+chrome.runtime.onMessage.addListener((request) => {
+    if (request.action === "STOP_BOT") {
+        console.log("🛑 STOP COMMAND RECEIVED.");
+        isRunning = false;
+        if(ghostCursor) ghostCursor.style.display = 'none';
+    }
+    if (request.action === "START_BOT") {
+        if (!isRunning) {
+            isRunning = true;
+            createGhostCursor(); // Init Cursor
+            chrome.storage.local.get("config", (data) => {
+                const safeConfig = { ...DEFAULT_CONFIG, ...(data.config || {}) };
+                startScanner(safeConfig);
+            });
+        }
+    }
+    // --- VISUALIZATION HANDLERS ---
+    if (request.action === "drawCursor") updateGhostCursor(request.x, request.y);
+    if (request.action === "drawClick") animateGhostClick();
+});
+
+// --- INITIALIZATION ---
+(async function init() {
+    createGhostCursor();
+    const data = await chrome.storage.local.get(["state", "config"]);
+    const config = { ...DEFAULT_CONFIG, ...(data.config || {}) };
+    
+    if (data.state === "WORKING") {
+        console.log("👻 GM Bot: Resuming Work Cycle");
+        isRunning = true;
+        await sleep(2000); 
+        startScanner(config);
+    }
+})();
+
+async function startScanner(config) {
+    console.log("🚀 Scanner Logic Started (Debug Mode).");
+
+    while (isRunning) {
+        if (checkForCaptcha()) break;
+        if (sessionActionCount >= config.maxActionsPerSession) {
+            console.log("🛑 Max actions reached.");
+            break;
+        }
+
+        const articles = Array.from(document.querySelectorAll(SELECTORS.tweetArticle));
+        let targetMatch = null;
+
+        for (const article of articles) {
+            if (article.innerText.includes("Promoted") || article.innerText.includes("Ad")) continue;
+            
+            const timeEl = article.querySelector(SELECTORS.timestamp);
+            const linkEl = timeEl ? timeEl.closest('a') : null;
+            if (!linkEl) continue;
+
+            const link = linkEl.href;
+            if (processedTweets.has(link)) continue;
+
+            const textEl = article.querySelector(SELECTORS.tweetText);
+            const text = textEl ? textEl.innerText.toLowerCase() : "";
+            
+            if (config.keywords.some(k => text.includes(k.toLowerCase()))) {
+                targetMatch = { article, link, text };
+                break; 
+            }
+            
+            processedTweets.add(link);
+        }
+
+        if (targetMatch) {
+            await engageTarget(targetMatch, config);
+        } else {
+            await humanScroll();
+        }
+    }
+}
+
+async function engageTarget(target, config) {
+    console.log(`🎯 MATCH: ${target.link}`);
+    
+    target.article.scrollIntoView({ behavior: "smooth", block: "center" });
+    await sleep(2000);
+
+    const replyText = config.replies[randomInt(0, config.replies.length - 1)];
+    
+    if (config.enableActions || config.simulationMode) {
+        await doReply(target.article, replyText, config);
+        // await doLike(target.article, config); // Temporarily disabled to focus on Reply
+        // await doFollowCheck(target.article, config); // Temporarily disabled
+
+        sessionActionCount++;
+        processedTweets.add(target.link);
+        await sleep(3000);
+    } else {
+        processedTweets.add(target.link);
+    }
+}
+
+async function doReply(article, text, config) {
+    if (!isRunning) return;
+
+    // 1. Find and Click Reply Button (Modal Opener)
+    const replyBtn = article.querySelector(SELECTORS.buttons.reply);
+    if (!replyBtn) {
+        console.error("❌ Reply button not found on tweet.");
+        return;
+    }
+
+    console.log("🖱️ Clicking Reply Button...");
+    sendClick(replyBtn);
+    
+    // 2. Wait for Modal
+    await sleep(3000); 
+
+    // 3. Find Input Field in Modal
+    const input = document.querySelector(SELECTORS.input.replyBox);
+    if (input) {
+        console.log("📝 Found Input. Clicking...");
+        sendClick(input);
+        await sleep(500);
+        
+        console.log(`⌨️ Typing: "${text}"`);
+        chrome.runtime.sendMessage({ action: "typeText", text: text });
+        await sleep(text.length * 100 + 1000);
+
+        if (config.simulationMode && !config.enableActions) {
+            console.log("🎭 Sim Mode: Discarding...");
+            await simulateDiscard();
+        } else {
+            const sendBtn = document.querySelector(SELECTORS.buttons.sendTweet);
+            if (sendBtn) {
+                sendClick(sendBtn);
+                console.log("🚀 Reply Sent.");
+                await sleep(4000);
+            }
+        }
+    } else {
+        console.error("❌ Modal Input not found. Did the click miss?");
+    }
+}
+
+async function simulateDiscard() {
+    // Click Close (X)
+    const closeBtn = document.querySelector('[aria-label="Close"]');
+    if (closeBtn) {
+        sendClick(closeBtn);
+        await sleep(1500);
+        
+        // Click Discard
+        const discardBtn = document.querySelector('[data-testid="confirmationSheetCancel"]');
+        if (discardBtn) {
+            sendClick(discardBtn);
+        } else {
+            // Text Fallback
+            const allBtns = Array.from(document.querySelectorAll('button'));
+            const txtBtn = allBtns.find(b => b.innerText === "Discard");
+            if (txtBtn) sendClick(txtBtn);
+        }
+    } else {
+        // Fallback: Escape
+        chrome.runtime.sendMessage({ action: "sendKey", key: "Escape" });
+    }
+    await sleep(2000);
+}
+
+// --- VISUALIZATION HELPERS ---
+function createGhostCursor() {
+    if (document.getElementById('ghost-cursor')) return;
+    ghostCursor = document.createElement('div');
+    ghostCursor.id = 'ghost-cursor';
+    Object.assign(ghostCursor.style, {
+        position: 'fixed', top: '0', left: '0', width: '15px', height: '15px',
+        backgroundColor: 'rgba(255, 0, 0, 0.8)', border: '2px solid white', borderRadius: '50%',
+        zIndex: '2147483647', pointerEvents: 'none', transition: 'transform 0.02s linear', // faster transition for accuracy
+        transform: 'translate3d(-100px, -100px, 0)'
+    });
+    document.body.appendChild(ghostCursor);
+}
+
+function updateGhostCursor(x, y) {
+    if (!ghostCursor) createGhostCursor();
+    ghostCursor.style.display = 'block';
+    ghostCursor.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+}
+
+function animateGhostClick() {
+    if (!ghostCursor) return;
+    ghostCursor.style.backgroundColor = 'rgba(0, 255, 0, 1)'; // Green on click
+    ghostCursor.style.transform += ' scale(0.8)';
+    setTimeout(() => {
+        ghostCursor.style.backgroundColor = 'rgba(255, 0, 0, 0.8)';
+        ghostCursor.style.transform = ghostCursor.style.transform.replace(' scale(0.8)', '');
+    }, 150);
+}
+
+// --- UTILS ---
+async function humanScroll() {
+    if (!isRunning) return;
+    const direction = "ArrowDown";
+    chrome.runtime.sendMessage({ action: "sendKey", key: direction });
+    await sleep(400); 
+    
+    // JS Fallback if key sim fails
+    const startY = window.scrollY;
+    await sleep(100);
+    if (Math.abs(window.scrollY - startY) < 5) {
+        window.scrollBy({ top: 300, behavior: "smooth" });
+    }
+    await sleep(randomInt(1500, 3000));
+}
+
+function sendClick(el) {
+    const c = getHumanCoords(el);
+    chrome.runtime.sendMessage({ action: "simulateClick", x: c.x, y: c.y });
+}
+
+function checkForCaptcha() { 
+    if (document.querySelector('iframe[src*="arkoselabs"]')) return true;
+    return false;
+}
+END FILE: ./content/content.js
+
+
+================================================================================
+START FILE: ./lib/utils.js
+================================================================================
+// lib/utils.js
+
+// Standard Uniform Random (Still needed for sleep timers)
+function randomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1) + min);
+}
+
+// Async sleep function
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// --- DEAD CENTER TARGETING (No Jitter) ---
+function getHumanCoords(rect) {
+    return {
+        x: rect.left + (rect.width / 2),
+        y: rect.top + (rect.height / 2)
+    };
+}
+
+// Logger
+async function logToStorage(msg, type = "INFO") {
+    const timestamp = new Date().toLocaleTimeString();
+    const entry = `[${timestamp}] [${type}] ${msg}`;
+    console.log(entry);
+
+    const data = await chrome.storage.local.get("logs");
+    let logs = data.logs || [];
+    logs.unshift(entry);
+    if (logs.length > 50) logs.pop();
+    
+    await chrome.storage.local.set({ logs: logs });
+}
+END FILE: ./lib/utils.js
+
+
+================================================================================
+START FILE: ./lib/database.js
+================================================================================
+// lib/database.js
+// A wrapper for IndexedDB to store bot actions
+
+const DB_CONFIG = {
+    name: 'XGhostBotDB',
+    version: 1,
+    storeName: 'interactions'
+};
+
+export const dbService = {
+    // Open Database Connection
+    open: () => {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_CONFIG.name, DB_CONFIG.version);
+
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                // Create the object store if it doesn't exist
+                if (!db.objectStoreNames.contains(DB_CONFIG.storeName)) {
+                    const store = db.createObjectStore(DB_CONFIG.storeName, { keyPath: 'id', autoIncrement: true });
+                    store.createIndex('timestamp', 'timestamp', { unique: false });
+                    store.createIndex('type', 'type', { unique: false });
+                    store.createIndex('status', 'status', { unique: false });
+                }
+            };
+
+            request.onsuccess = (event) => resolve(event.target.result);
+            request.onerror = (event) => reject(event.target.error);
+        });
+    },
+
+    // Add a new Record
+    add: async (record) => {
+        const db = await dbService.open();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([DB_CONFIG.storeName], 'readwrite');
+            const store = transaction.objectStore(DB_CONFIG.storeName);
+            
+            // Default Structure
+            const entry = {
+                timestamp: new Date().toISOString(),
+                type: record.type || "UNKNOWN", // e.g., "TIMELINE_REPLY", "DM_REPLY"
+                targetUrl: record.targetUrl || "",
+                status: record.status || "DRY_RUN", // "EXECUTED", "DRY_RUN", "FAILED"
+                details: {
+                    liked: record.details?.liked || false,
+                    followed: record.details?.followed || false,
+                    replyText: record.details?.replyText || null,
+                    error: record.details?.error || null
+                }
+            };
+
+            const request = store.add(entry);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    // Get All Records (Newest First)
+    getAll: async () => {
+        const db = await dbService.open();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([DB_CONFIG.storeName], 'readonly');
+            const store = transaction.objectStore(DB_CONFIG.storeName);
+            const request = store.getAll();
+
+            request.onsuccess = () => {
+                // Sort by timestamp descending (newest first)
+                const sorted = request.result.sort((a, b) => 
+                    new Date(b.timestamp) - new Date(a.timestamp)
+                );
+                resolve(sorted);
+            };
+            request.onerror = () => reject(request.error);
+        });
+    },
+    
+    // Clear Database
+    clear: async () => {
+        const db = await dbService.open();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([DB_CONFIG.storeName], 'readwrite');
+            const store = transaction.objectStore(DB_CONFIG.storeName);
+            const request = store.clear();
+            request.onsuccess = () => resolve(true);
+            request.onerror = () => reject(request.error);
+        });
+    }
+};
+END FILE: ./lib/database.js
+
+
+================================================================================
+START FILE: ./lib/selectors.js
+================================================================================
+// lib/selectors.js
+const SELECTORS = {
+    tweetArticle: 'article[data-testid="tweet"]',
+    tweetText: 'div[data-testid="tweetText"]',
+    userName: 'div[data-testid="User-Name"]',
+    timestamp: 'time',
+    
+    // Profile Interaction
+    userAvatar: 'div[data-testid="Tweet-User-Avatar"]',
+    hoverCard: 'div[data-testid="HoverCard"]',
+    hoverCardButton: 'div[data-testid="HoverCard"] button[role="button"]', 
+    
+    // SAFETY & ERRORS
+    captcha: [
+        'iframe[src*="arkoselabs"]', 
+        'iframe[src*="funcaptcha"]', 
+        'div[data-testid="challengePage"]'
+    ],
+    
+    buttons: {
+        like: 'button[data-testid="like"]',
+        reply: 'button[data-testid="reply"]',
+        sendTweet: 'button[data-testid="tweetButton"]',
+        
+        // MODAL ACTIONS
+        modal: 'div[role="dialog"]',
+        closeModal: '[aria-label="Close"]', // The X button
+        saveDraft: 'button[data-testid="confirmationSheetConfirm"]', 
+        discardDraft: 'button[data-testid="confirmationSheetCancel"]' 
+    },
+    input: {
+        replyBox: 'div[data-testid="tweetTextarea_0"]'
+    }
+};
+END FILE: ./lib/selectors.js
+
+
+================================================================================
+START FILE: ./lib/config.js
+================================================================================
+// lib/config.js
+const DEFAULT_CONFIG = {
+    // Logic: GM Bot Defaults
+    keywords: ["gm", "good morning", "morning", "rise and shine", "top of the morning", "gmgm"],
+    replies: [
+        "GM! ☕️",
+        "Good morning! ☀️",
+        "GM fam!",
+        "Rise and grind! 🚀",
+        "Have a great day!"
+    ],
+    // Timers (Minutes)
+    workCycleMin: 15,
+    workCycleMax: 45,
+    sleepCycleMin: 5,
+    sleepCycleMax: 15,
+    
+    // Safety & Modes
+    enableActions: false,    // If TRUE: Actually Posts/Likes/Follows
+    simulationMode: false,   // If TRUE (and enableActions is FALSE): Clicks UI but DOES NOT Post/Follow
+    
+    maxActionsPerSession: 20,
+    
+    // Follow Limits
+    followLimitCount: 15,
+    followLimitWindowMins: 30
+};
+
+const DECOY_URLS = [
+    "https://www.google.com",
+    "https://news.ycombinator.com",
+    "https://www.wikipedia.org"
+];
+END FILE: ./lib/config.js
+
+
+================================================================================
+START FILE: ./manifest.json
+================================================================================
+{
+  "manifest_version": 3,
+  "name": "X Ghost Bot (Pro)",
+  "version": "2.0.0",
+  "description": "Autonomous client-side automation with telemetry and decoy loops.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "debugger",
+    "storage",
+    "alarms",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://twitter.com/*",
+    "https://x.com/*",
+    "https://www.google.com/*",
+    "https://news.ycombinator.com/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://twitter.com/*", "https://x.com/*"],
+      "js": ["lib/config.js", "lib/selectors.js", "lib/utils.js", "content/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
+END FILE: ./manifest.json
+
