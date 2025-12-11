@@ -1,99 +1,92 @@
-import { dbService } from '../lib/database.js';
+import { Database } from '../core/database.js';
+import { CONFIG } from '../config/constants.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
-    setupTabs();
-    await loadConfig();
-    await loadDatabase();
+    initTabs();
+    await loadSettings();
+    await loadHistory();
 
     // Event Listeners
-    document.getElementById('btn-save-config').addEventListener('click', saveConfig);
-    document.getElementById('btn-refresh').addEventListener('click', loadDatabase);
+    document.getElementById('btn-save').addEventListener('click', saveSettings);
+    document.getElementById('btn-refresh').addEventListener('click', loadHistory);
     document.getElementById('btn-clear').addEventListener('click', async () => {
-        if(confirm("Clear entire database?")) {
-            await dbService.clear();
-            loadDatabase();
+        if(confirm("Are you sure you want to delete all logs?")) {
+            await Database.clear();
+            await loadHistory();
         }
     });
 });
 
 // --- TABS ---
-function setupTabs() {
-    const items = document.querySelectorAll('.menu-item');
-    items.forEach(item => {
-        item.addEventListener('click', () => {
-            // Remove active classes
-            document.querySelectorAll('.menu-item').forEach(i => i.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            
-            // Activate clicked
-            item.classList.add('active');
-            const tabId = item.getAttribute('data-tab');
-            document.getElementById(`tab-${tabId}`).classList.add('active');
+function initTabs() {
+    const tabs = document.querySelectorAll('.menu-item');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            // Remove active
+            document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            // Add active
+            tab.classList.add('active');
+            const target = tab.getAttribute('data-tab');
+            document.getElementById(`tab-${target}`).classList.add('active');
         });
     });
 }
 
 // --- CONFIGURATION ---
-async function loadConfig() {
-    const data = await chrome.storage.local.get("config");
-    // Merge with defaults from lib/config.js (loaded in html)
-    const config = { ...DEFAULT_CONFIG, ...(data.config || {}) };
+async function loadSettings() {
+    const store = await chrome.storage.local.get("config");
+    // Merge stored config with defaults
+    const current = { ...CONFIG, ...(store.config || {}) };
 
-    document.getElementById('conf-enableActions').checked = config.enableActions;
-    document.getElementById('conf-simulationMode').checked = config.simulationMode;
-    document.getElementById('conf-keywords').value = (config.keywords || []).join(", ");
-    document.getElementById('conf-replies').value = (config.replies || []).join("\n");
-    document.getElementById('conf-followLimit').value = config.followLimitCount;
-    document.getElementById('conf-maxActions').value = config.maxActionsPerSession;
+    document.getElementById('conf-simulation').checked = current.SIMULATION_MODE;
+    document.getElementById('conf-keywords').value = current.KEYWORDS.join(", ");
+    document.getElementById('conf-replies').value = current.REPLIES.join("\n");
 }
 
-async function saveConfig() {
-    const data = await chrome.storage.local.get("config");
-    const current = data.config || DEFAULT_CONFIG;
-
+async function saveSettings() {
     const newConfig = {
-        ...current,
-        enableActions: document.getElementById('conf-enableActions').checked,
-        simulationMode: document.getElementById('conf-simulationMode').checked,
-        keywords: document.getElementById('conf-keywords').value.split(',').map(s => s.trim()).filter(s => s),
-        replies: document.getElementById('conf-replies').value.split('\n').map(s => s.trim()).filter(s => s),
-        followLimitCount: parseInt(document.getElementById('conf-followLimit').value) || 15,
-        maxActionsPerSession: parseInt(document.getElementById('conf-maxActions').value) || 20
+        SIMULATION_MODE: document.getElementById('conf-simulation').checked,
+        KEYWORDS: document.getElementById('conf-keywords').value.split(',').map(s => s.trim()).filter(Boolean),
+        REPLIES: document.getElementById('conf-replies').value.split('\n').map(s => s.trim()).filter(Boolean)
     };
 
-    await chrome.storage.local.set({ config: newConfig });
-    alert("Configuration Saved!");
+    // Keep other defaults if not in UI
+    const store = await chrome.storage.local.get("config");
+    const merged = { ...CONFIG, ...(store.config || {}), ...newConfig };
+
+    await chrome.storage.local.set({ config: merged });
+    
+    // Show feedback
+    const msg = document.getElementById('save-msg');
+    msg.style.opacity = 1;
+    setTimeout(() => msg.style.opacity = 0, 2000);
 }
 
 // --- DATABASE ---
-async function loadDatabase() {
+async function loadHistory() {
     const tbody = document.getElementById('table-body');
-    tbody.innerHTML = '<tr><td colspan="5">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3">Loading...</td></tr>';
     
     try {
-        const records = await dbService.getAll();
+        const records = await Database.getAll();
         tbody.innerHTML = '';
+        
         if (records.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5">No actions recorded.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#777;">No activity yet.</td></tr>';
             return;
         }
 
         records.forEach(row => {
             const tr = document.createElement('tr');
-            const date = new Date(row.timestamp).toLocaleTimeString();
-            const statusClass = `status-${row.status.toLowerCase()}`;
-            const details = `Reply: "${row.details.replyText || ''}"`;
-
             tr.innerHTML = `
-                <td>${date}</td>
-                <td>${row.type}</td>
-                <td class="${statusClass}"><strong>${row.status}</strong></td>
-                <td><a href="${row.targetUrl}" target="_blank" style="color:#1d9bf0">Link</a></td>
-                <td>${details}</td>
+                <td>${new Date(row.timestamp).toLocaleString()}</td>
+                <td><span class="tag">${row.type}</span></td>
+                <td>${row.text || '-'}</td>
             `;
             tbody.appendChild(tr);
         });
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="5" style="color:red">Error: ${e.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="3" style="color:red">Error: ${e.message}</td></tr>`;
     }
 }

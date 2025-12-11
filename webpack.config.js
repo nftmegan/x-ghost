@@ -2,9 +2,10 @@ const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
 
 module.exports = {
+  mode: 'production', // Defaults to pro mode
   entry: {
-    background: './src/background/background.js',
-    content: './src/content/content.js',
+    background: './src/entry/background.js', // Updated path
+    content: './src/entry/content.js',       // Updated path
     popup: './src/popup/popup.js',
     dashboard: './src/dashboard/dashboard.js'
   },

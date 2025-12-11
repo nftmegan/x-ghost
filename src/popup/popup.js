@@ -1,90 +1,56 @@
 document.addEventListener('DOMContentLoaded', async () => {
-    const data = await chrome.storage.local.get(["state", "logs"]);
-    updateUI(data.state);
-    renderLogs(data.logs || []);
-    checkTargetTabs(data.state); // Check on load
+    // 1. Initialize UI State
+    const data = await chrome.storage.local.get("state");
+    updateUI(data.state || "IDLE");
 
-    // HANDLERS
-    document.getElementById("btn-toggle-cycle").addEventListener("click", async () => {
-        const btn = document.getElementById("btn-toggle-cycle");
-        
-        // Don't allow click if disabled
-        if (btn.disabled) return;
+    // 2. Start/Stop Button
+    document.getElementById("btn-toggle").addEventListener("click", async () => {
+        const btn = document.getElementById("btn-toggle");
+        const isRunning = btn.innerText.includes("Stop");
 
-        if (btn.innerText.includes("Start")) {
-            chrome.runtime.sendMessage({ action: "START_BOT" });
-            updateUI("WORKING");
-        } else {
-            chrome.runtime.sendMessage({ action: "STOP_BOT" });
+        if (isRunning) {
+            // STOP
+            await sendMessageToActiveTab("STOP_BOT");
+            await chrome.storage.local.set({ state: "IDLE" });
             updateUI("IDLE");
+        } else {
+            // START
+            await sendMessageToActiveTab("START_BOT");
+            await chrome.storage.local.set({ state: "WORKING" });
+            updateUI("WORKING");
         }
     });
 
+    // 3. Open Dashboard
     document.getElementById("btn-dashboard").addEventListener("click", () => {
         chrome.tabs.create({ url: "dashboard/dashboard.html" });
     });
-
-    // POLLING
-    setInterval(async () => {
-        const d = await chrome.storage.local.get(["state", "logs"]);
-        updateUI(d.state);
-        renderLogs(d.logs);
-        checkTargetTabs(d.state); // Continuously check tabs
-    }, 2000);
 });
 
-async function checkTargetTabs(currentState) {
-    const btn = document.getElementById("btn-toggle-cycle");
-    
-    // Only apply restriction if bot is IDLE. 
-    // If it's WORKING, we allow Stop even if tabs are closed (to reset state).
-    if (currentState === "WORKING") {
-        btn.disabled = false;
-        btn.style.opacity = "1";
-        btn.style.cursor = "pointer";
-        return;
-    }
-
-    const tabs = await chrome.tabs.query({ url: ["*://x.com/*", "*://twitter.com/*"] });
-    
-    if (tabs.length === 0) {
-        btn.disabled = true;
-        btn.innerText = "Open X to Start";
-        btn.style.opacity = "0.5";
-        btn.style.cursor = "not-allowed";
-        btn.className = "btn primary"; // Reset color to neutral/primary
-    } else {
-        btn.disabled = false;
-        // Text is handled by updateUI
-        btn.style.opacity = "1";
-        btn.style.cursor = "pointer";
-    }
-}
-
 function updateUI(state) {
-    const statusEl = document.getElementById("status-indicator");
-    const btn = document.getElementById("btn-toggle-cycle");
-    
-    statusEl.innerText = state || "IDLE";
-    statusEl.className = (state === "WORKING") ? "status-on" : "status-off";
+    const statusEl = document.getElementById("status");
+    const btn = document.getElementById("btn-toggle");
 
-    // Only update text/class if button is enabled (tabs exist)
-    if (!btn.disabled) {
-        if (state === "WORKING") {
-            btn.innerText = "Stop Cycle";
-            btn.className = "btn danger";
-        } else {
-            btn.innerText = "Start Cycle";
-            btn.className = "btn primary";
-        }
+    if (state === "WORKING") {
+        statusEl.innerText = "RUNNING";
+        statusEl.className = "status-badge on";
+        btn.innerText = "Stop Cycle";
+        btn.className = "btn-large stop";
+    } else {
+        statusEl.innerText = "IDLE";
+        statusEl.className = "status-badge off";
+        btn.innerText = "Start Cycle";
+        btn.className = "btn-large start";
     }
 }
 
-function renderLogs(logs) {
-    const container = document.getElementById("log-window");
-    if (!logs || logs.length === 0) {
-        container.innerHTML = '<div class="log-entry" style="color:#666">No logs yet...</div>';
-        return;
+async function sendMessageToActiveTab(action) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab) {
+        chrome.tabs.sendMessage(tab.id, { action }).catch(() => {
+            alert("Please refresh the X/Twitter page first!");
+        });
+    } else {
+        alert("Open X/Twitter to start the bot.");
     }
-    container.innerHTML = logs.map(l => `<div class="log-entry">${l}</div>`).join("");
 }

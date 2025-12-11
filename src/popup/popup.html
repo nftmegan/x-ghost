@@ -5,23 +5,18 @@
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-    <div class="container" style="text-align:center; padding-top:10px;">
+    <div class="container">
         <header>
-            <h1 style="justify-content:center">Ghost Bot</h1>
-            <div id="status-indicator" class="status-off">IDLE</div>
+            <div class="title">👻 Ghost Bot</div>
+            <div id="status" class="status-badge">OFF</div>
         </header>
 
-        <div class="controls" style="margin-top:20px;">
-            <button id="btn-toggle-cycle" class="btn primary" style="width:100%">Start Cycle</button>
-        </div>
-        
-        <div class="controls">
-             <button id="btn-dashboard" class="btn secondary" style="width:100%;">Open Dashboard</button>
+        <div class="main-controls">
+            <button id="btn-toggle" class="btn-large">Start Cycle</button>
         </div>
 
-        <div class="logs-panel" style="margin-top:20px; text-align:left;">
-            <h3>Recent Activity</h3>
-            <div id="log-window"></div>
+        <div class="links">
+            <button id="btn-dashboard" class="link-btn">Open Dashboard ↗</button>
         </div>
     </div>
     <script src="popup.js"></script>
