@@ -2,10 +2,13 @@ const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
 
 module.exports = {
-  mode: 'production', // Defaults to pro mode
+  mode: 'production',
+  // CRITICAL FIX: This prevents Webpack from using "eval()", which Chrome blocks.
+  devtool: 'cheap-module-source-map',
+  
   entry: {
-    background: './src/entry/background.js', // Updated path
-    content: './src/entry/content.js',       // Updated path
+    background: './src/entry/background.js',
+    content: './src/entry/content.js',
     popup: './src/popup/popup.js',
     dashboard: './src/dashboard/dashboard.js'
   },
@@ -19,7 +22,12 @@ module.exports = {
       {
         test: /\.js$/,
         exclude: /node_modules/,
-        use: { loader: 'babel-loader', options: { presets: ['@babel/preset-env'] } }
+        use: {
+          loader: 'babel-loader',
+          options: {
+            presets: ['@babel/preset-env']
+          }
+        }
       }
     ]
   },

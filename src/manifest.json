@@ -1,16 +1,22 @@
 {
   "manifest_version": 3,
   "name": "X Ghost Bot (Pro)",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "permissions": ["activeTab", "scripting", "debugger", "storage", "alarms", "tabs"],
   "host_permissions": ["https://x.com/*", "https://twitter.com/*"],
-  "action": { "default_popup": "popup.html" },
+  "action": {},
   "background": { "service_worker": "background.js" },
   "content_scripts": [
     {
       "matches": ["https://twitter.com/*", "https://x.com/*"],
       "js": ["content.js"], 
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["dashboard.html", "assets/*.png"],
+      "matches": ["https://twitter.com/*", "https://x.com/*"]
     }
   ]
 }

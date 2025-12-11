@@ -2,7 +2,9 @@ import { SELECTORS } from '../config/selectors.js';
 
 export const Scanner = {
     readActiveTweet() {
-        // We rely on keyboard focus (j/k keys)
+        // RELIABILITY UPGRADE: 
+        // When using 'J', Twitter natively focuses the tweet element.
+        // We can just grab 'document.activeElement' which is 100% accurate.
         const focused = document.activeElement;
         const article = focused?.closest(SELECTORS.TWEET);
         
@@ -17,7 +19,9 @@ export const Scanner = {
             element: article
         };
     },
+
     hasKeyword(text, keywords) {
+        if (!text) return false;
         return keywords.some(k => text.includes(k.toLowerCase()));
     }
 };

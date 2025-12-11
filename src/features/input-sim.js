@@ -1,4 +1,6 @@
+// src/features/input-sim.js
 // This runs in BACKGROUND context
+
 let virtualMouse = { x: 100, y: 100 };
 
 export async function moveMouseSmoothly(tabId, toX, toY) {
@@ -16,7 +18,7 @@ export async function moveMouseSmoothly(tabId, toX, toY) {
                 type: "mouseMoved", x, y, button: "none", clickCount: 0
             });
             // Tell content script to draw the dot
-            chrome.tabs.sendMessage(tabId, { type: "DRAW_KcCURSOR", x, y }).catch(() => {});
+            chrome.tabs.sendMessage(tabId, { type: "DRAW_CURSOR", x, y }).catch(() => {});
         } catch (e) { /* Ignore debugger detach */ }
         
         await new Promise(r => setTimeout(r, 10)); // 10ms tick
@@ -46,7 +48,7 @@ export async function typeKeys(tabId, text) {
 }
 
 export async function pressKey(tabId, key, modifiers = 0) {
-    // modifiers: 2 = Ctrl
+    // modifiers: 2 = Ctrl, 1 = Alt, 4 = Meta, 8 = Shift
     try {
         await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", { type: "keyDown", key, modifiers });
         await new Promise(r => setTimeout(r, 50));

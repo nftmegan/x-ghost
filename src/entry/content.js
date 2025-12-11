@@ -4,108 +4,112 @@ import { Logger } from '../core/logger.js';
 import { Database } from '../core/database.js';
 import { GhostCursor } from '../features/ghost-cursor.js';
 import { Scanner } from '../features/scanner.js';
-import { wait, random, getElementCenter } from '../utils/helpers.js';
+import { Panel } from '../features/ui-panel.js';
+import { wait, random, randomGaussian, getElementCenter } from '../utils/helpers.js';
 
 let isRunning = false;
-let config = { ...CONFIG }; // Local copy of settings
+let config = { ...CONFIG };
 
-// --- COMMAND CENTER ---
+const Log = {
+    info: (msg) => { Logger.info(msg); Panel.log(msg); },
+    error: (msg) => { Logger.error(msg); Panel.log(`Error: ${msg}`); }
+};
+
 const Bot = {
-    // 1. Initialize and Start
     async start() {
         if (isRunning) return;
         isRunning = true;
         
-        // Load latest user config from storage (overriding defaults)
+        Panel.setStatus(true);
+        GhostCursor.init();
+        
         const storage = await chrome.storage.local.get("config");
         if (storage.config) config = { ...config, ...storage.config };
         
-        // Initialize Visuals
-        GhostCursor.init();
-        
-        // Connect to Background (for Mouse/Keyboard simulation)
         chrome.runtime.sendMessage({ action: "ATTACH_DEBUGGER" });
+        Log.info(`🚀 Started (J-Nav). Sim: ${config.SIMULATION_MODE}`);
         
-        Logger.info(`🚀 Bot Started. Sim Mode: ${config.SIMULATION_MODE}`);
+        // Ensure we have focus so keys work
+        document.body.click();
         
-        // Start the Main Loop
         this.loop();
     },
     
-    // 2. Stop
     stop() {
         isRunning = false;
-        Logger.info("🛑 Bot Stopped");
+        Panel.setStatus(false);
+        Log.info("🛑 Stopped.");
     },
     
-    // 3. The Main Logic Loop
     async loop() {
         while (isRunning) {
-            // A. Move to Next Tweet (Simulate 'j' key)
-            // This is the most "human" way to scroll Twitter
+            // 1. Navigation: Press 'J' to jump to next tweet
+            // We randomize the hold duration (human keys aren't instant)
             await this.sendKey("j");
             
-            // Random human pause after scrolling
-            await wait(random(2000, 3500)); 
+            // 2. Human "Reading" Pause
+            // We use Gaussian random to simulate reading speed.
+            // Short pauses (1s) for boring tweets, longer (4s) for interesting ones.
+            const readTime = randomGaussian(800, 3500); 
+            // Log.info(`👀 Reading (${Math.floor(readTime)}ms)...`); // Optional noise
+            await wait(readTime);
             
             if (!isRunning) break;
 
-            // B. Scan the active tweet
+            // 3. Scan the focused tweet
             const tweet = Scanner.readActiveTweet();
             if (!tweet) {
-                Logger.info("⚠️ No active tweet found in focus, skipping...");
+                // If 'j' hit the end or something weird, wait a bit and try again
+                await wait(1000); 
                 continue;
             }
 
-            // C. Check for Keywords
+            // 4. Evaluate
             if (Scanner.hasKeyword(tweet.text, config.KEYWORDS)) {
-                Logger.info(`🎯 Keyword Match Found: "${tweet.text.substring(0, 30)}..."`);
+                Log.info(`🎯 Match: "${tweet.text.substring(0, 25)}..."`);
                 
-                // D. Perform the Action
                 await this.performReply(tweet);
                 
-                // E. Long Cooldown after an action (Safety)
-                const cooldown = random(config.WORK_MIN * 1000, config.WORK_MAX * 1000) / 2; // Example math
-                Logger.info(`⏳ Cooling down for ${Math.floor(cooldown/1000)}s...`);
+                // 5. Cooldown after interaction
+                const cooldown = randomGaussian(10000, 25000); 
+                Log.info(`⏳ Cooling (${Math.floor(cooldown/1000)}s)`);
                 await wait(cooldown);
             }
         }
     },
 
-    // 4. The Reply Logic
     async performReply(tweet) {
-        // Pick a random reply
         const replyText = config.REPLIES[random(0, config.REPLIES.length - 1)];
         
-        // Open Reply Modal (Simulate 'r' key)
-        await this.sendKey("r");
-        await wait(2000); // Wait for modal animation
+        // Focus Attention: Move mouse to the tweet roughly
+        const tweetCenter = getElementCenter(tweet.element);
+        await chrome.runtime.sendMessage({ action: "MOVE_MOUSE", x: tweetCenter.x, y: tweetCenter.y });
+        await wait(random(300, 800));
 
-        // Check if Modal Opened
+        // Open Modal: 'R' key is the native shortcut to reply to the *focused* tweet
+        // Since we used 'J', we KNOW this tweet is focused. This is super reliable.
+        await this.sendKey("r");
+        await wait(2500); // Wait for modal animation
+
         const inputEl = document.querySelector(SELECTORS.INPUT_YZ);
         if (!inputEl) {
-            Logger.error("Reply modal did not open. Retrying...");
+            Log.error("Reply modal missing");
             await this.sendKey("Escape");
             return;
         }
 
-        // Move Ghost Cursor to the input box (Visual only)
+        // Type Reply
         const center = getElementCenter(inputEl);
         await chrome.runtime.sendMessage({ action: "MOVE_MOUSE", x: center.x, y: center.y });
-        
-        // Type the text
         await chrome.runtime.sendMessage({ action: "TYPE", text: replyText });
-        await wait(replyText.length * 50 + 1000); // Wait for typing to finish
+        await wait(replyText.length * 50 + 1000);
 
-        // Handle Send vs Simulation
+        // Action: Send or Discard
         if (config.SIMULATION_MODE) {
-            Logger.info("🎭 Simulation Mode: Discarding draft...");
-            
-            // Close Modal
+            Log.info("🎭 Sim: Discarding...");
             await this.sendKey("Escape");
             await wait(800);
             
-            // Handle "Discard?" Confirmation Dialog if it appears
             const confirmBtn = document.querySelector(SELECTORS.DISCARD_BTN);
             if (confirmBtn) {
                 const btnCenter = getElementCenter(confirmBtn);
@@ -113,34 +117,33 @@ const Bot = {
                 await chrome.runtime.sendMessage({ action: "CLICK" });
             }
         } else {
-            Logger.info("🚀 Sending Tweet!");
-            // Ctrl + Enter to send
+            Log.info("🚀 Sending!");
+            // Ctrl + Enter is the shortcut to send
             await this.sendKey("Enter", 2); 
-            
-            // Log to Database
-            await Database.add({ 
-                type: "REPLY", 
-                text: replyText, 
-                target: tweet.user 
-            });
+            await Database.add({ type: "REPLY", text: replyText, target: tweet.user });
         }
-        
         await wait(2000);
     },
 
-    // Helper to send keys via Background script
     async sendKey(key, modifier = 0) {
         await chrome.runtime.sendMessage({ action: "PRESS", key, modifier });
     }
 };
 
-// --- LISTENERS ---
-// Responds to messages from Popup or Background
-chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
+// --- INIT ---
+Panel.init();
+
+document.addEventListener('keydown', (e) => {
+    if (e.altKey && e.code === 'KeyS') {
+        e.preventDefault();
+        if (isRunning) Bot.stop();
+        else Bot.start();
+    }
+});
+
+chrome.runtime.onMessage.addListener((req) => {
     if (req.action === "START_BOT") Bot.start();
     if (req.action === "STOP_BOT") Bot.stop();
-    
-    // Visuals (Red Dot) updates driven by Background input sim
-    if (req.type === "DRAW_KcCURSOR") GhostCursor.move(req.x, req.y);
+    if (req.type === "DRAW_CURSOR") GhostCursor.move(req.x, req.y);
     if (req.type === "DRAW_CLICK") GhostCursor.click();
 });
