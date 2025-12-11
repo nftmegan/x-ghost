@@ -3,7 +3,7 @@
 export const Panel = {
     el: null,
     statusEl: null,
-    logEl: null,
+    logContainer: null,
 
     init() {
         if (document.getElementById('ghost-panel')) return;
@@ -16,7 +16,7 @@ export const Panel = {
                 background: rgba(10, 10, 10, 0.95); color: #e0e0e0;
                 border: 1px solid #333; border-radius: 8px;
                 padding: 12px; font-family: 'Segoe UI', system-ui, sans-serif; font-size: 12px;
-                z-index: 2147483647; width: 260px; 
+                z-index: 2147483647; width: 280px; 
                 box-shadow: 0 8px 32px rgba(0,0,0,0.5);
                 backdrop-filter: blur(8px);
                 transition: opacity 0.2s;
@@ -24,24 +24,48 @@ export const Panel = {
             }
             #ghost-panel:hover { opacity: 1; }
             
-            .ghost-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+            .ghost-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #333; }
             .ghost-title { font-weight: 700; font-size: 14px; color: #fff; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;}
             
             .ghost-status { 
-                padding: 3px 8px; border-radius: 4px; font-weight: 700; font-size: 10px; 
+                padding: 3px 8px;yb border-radius: 4px; font-weight: 700; font-size: 10px; 
                 background: #222; color: #777; border: 1px solid #333; letter-spacing: 0.5px;
                 transition: all 0.3s;
             }
             .ghost-status.running { 
-                background: rgba(0, 255, 0, 0.1); color: #00ff00; border-color: #00ff00; 
-                box-shadow: 0 0 10px rgba(0, 255, 0, 0.1);
+                background: rgba(0, 255, 65, 0.15); color: #00ff41; border-color: #00ff41; 
+                box-shadow: 0 0 8px rgba(0, 255, 65, 0.2);
             }
 
-            .ghost-log { 
-                color: #999; font-family: 'Consolas', monospace; font-size: 11px;
-                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
-                margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #333;
+            /* SCROLLING LOG CONSOLE */
+            .ghost-console {
+                height: 120px;
+                overflow-y: auto;
+                background: #000;
+                border: 1px solid #222;
+                border-radius: 4px;
+                padding: 6px;
+                margin-bottom: 10px;
+                display: flex;
+                flex-direction: column-reverse; /* Newest at bottom visually if we prepend, or column if append */
             }
+            
+            .log-entry {
+                font-family: 'Consolas', 'Monaco', monospace;
+                font-size: 11px;
+                margin-bottom: 3px;
+                line-height: 1.3;
+                color: #888;
+                border-bottom: 1px solid #111;
+            }
+            .log-entry:first-child { color: #00ff41; font-weight: 600; } /* Highlight most recent */
+            .log-entry.error { color: #ff4444; }
+            .log-entry .time { color: #555; margin-right: 4px; font-size: 10px; }
+
+            /* SCROLLBAR */
+            .ghost-console::-webkit-scrollbar { width: 4px; }
+            .ghost-console::-webkit-scrollbar-track { background: #111; }
+            .ghost-console::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
 
             .ghost-footer { display: flex; justify-content: space-between; align-items: center; color: #666; font-size: 11px; }
             .key-badge { background: #2a2a2a; padding: 2px 5px; border-radius: 4px; color: #eee; border: 1px solid #444; font-size: 10px;}
@@ -58,7 +82,11 @@ export const Panel = {
                 <span class="ghost-title">👻 Ghost Bot</span>
                 <span id="ghost-status" class="ghost-status">STOPPED</span>
             </div>
-            <div id="ghost-log" class="ghost-log">Ready to start...</div>
+            
+            <div id="ghost-console" class="ghost-console">
+                <div class="log-entry">System ready... waiting for Alt+S</div>
+            </div>
+
             <div class="ghost-footer">
                 <span>Toggle: <span class="key-badge">Alt</span> + <span class="key-badge">S</span></span>
                 <a id="ghost-dash-link" class="dash-link">Dashboard ↗</a>
@@ -67,9 +95,9 @@ export const Panel = {
         document.body.appendChild(this.el);
 
         this.statusEl = this.el.querySelector('#ghost-status');
-        this.logEl = this.el.querySelector('#ghost-log');
+        this.logContainer = this.el.querySelector('#ghost-console');
 
-        // 3. Link Dashboard (The FIX: Send message to background)
+        // 3. Link Dashboard
         this.el.querySelector('#ghost-dash-link').addEventListener('click', () => {
             chrome.runtime.sendMessage({ action: "OPEN_DASHBOARD" });
         });
@@ -86,11 +114,23 @@ export const Panel = {
         }
     },
 
-    log(msg) {
-        if (this.logEl) {
-            const cleanMsg = msg.replace(/^\[.*?\]\s*/, '').replace(/[\u{1F600}-\u{1F6FF}]/gu, ''); 
-            this.logEl.textContent = `> ${cleanMsg}`;
-            this.logEl.title = msg;
+    log(msg, type = 'info') {
+        if (!this.logContainer) return;
+        
+        const time = new Date().toLocaleTimeString().split(' ')[0]; // 10:45:12
+        
+        const entry = document.createElement('div');
+        entry.className = type === 'error' ? 'log-entry error' : 'log-entry';
+        
+        // Clean up emojis for cleaner console look if desired, or keep them
+        entry.innerHTML = `<span class="time">[${time}]</span> ${msg}`;
+        
+        // Add to top (so user sees newest immediately without scrolling)
+        this.logContainer.prepend(entry);
+        
+        // Limit history to 50 lines to prevent memory issues
+        if (this.logContainer.children.length > 50) {
+            this.logContainer.removeChild(this.logContainer.lastChild);
         }
     }
 };
