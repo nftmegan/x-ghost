@@ -3,8 +3,18 @@
 
 let virtualMouse = { x: 100, y: 100 };
 
+// Map logic keys to physical keyboard data
+const KEY_DEFINITIONS = {
+    'j': { code: 'KeyJ', key: 'j', text: 'j', keyCode: 74 },
+    'k': { code: 'KeyK', key: 'k', text: 'k', keyCode: 75 },
+    'r': { code: 'KeyR', key: 'r', text: 'r', keyCode: 82 },
+    'Enter': { code: 'Enter', key: 'Enter', text: '\r', keyCode: 13 },
+    'Escape': { code: 'Escape', key: 'Escape', text: '', keyCode: 27 },
+    'ArrowDown': { code: 'ArrowDown', key: 'ArrowDown', text: '', keyCode: 40 },
+    'ArrowUp': { code: 'ArrowUp', key: 'ArrowUp', text: '', keyCode: 38 }
+};
+
 export async function moveMouseSmoothly(tabId, toX, toY) {
-    // Simple Linear Interpolation (Lerp) for stability
     const steps = 15;
     const start = { ...virtualMouse };
     
@@ -17,11 +27,10 @@ export async function moveMouseSmoothly(tabId, toX, toY) {
             await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
                 type: "mouseMoved", x, y, button: "none", clickCount: 0
             });
-            // Tell content script to draw the dot
             chrome.tabs.sendMessage(tabId, { type: "DRAW_CURSOR", x, y }).catch(() => {});
-        } catch (e) { /* Ignore debugger detach */ }
+        } catch (e) { }
         
-        await new Promise(r => setTimeout(r, 10)); // 10ms tick
+        await new Promise(r => setTimeout(r, 10)); 
     }
     virtualMouse = { x: toX, y: toY };
 }
@@ -42,16 +51,39 @@ export async function typeKeys(tabId, text) {
             await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", { type: "keyDown", text: char });
             await new Promise(r => setTimeout(r, 30));
             await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", { type: "keyUp", text: char });
-            await new Promise(r => setTimeout(r, 30)); // Typing speed
+            await new Promise(r => setTimeout(r, 30)); 
         }
     } catch(e) {}
 }
 
-export async function pressKey(tabId, key, modifiers = 0) {
-    // modifiers: 2 = Ctrl, 1 = Alt, 4 = Meta, 8 = Shift
+export async function pressKey(tabId, keyName, modifiers = 0) {
+    // 1. Get the full definition (or fallback to basic)
+    const def = KEY_DEFINITIONS[keyName] || { key: keyName, code: keyName, text: "" };
+    
     try {
-        await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", { type: "keyDown", key, modifiers });
-        await new Promise(r => setTimeout(r, 50));
-        await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", { type: "keyUp", key, modifiers });
-    } catch(e) {}
+        // 2. Send detailed keyDown (Required for Shortcuts)
+        await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", { 
+            type: "keyDown", 
+            key: def.key, 
+            code: def.code,
+            text: def.text,
+            unmodifiedText: def.text,
+            windowsVirtualKeyCode: def.keyCode,
+            nativeVirtualKeyCode: def.keyCode,
+            modifiers 
+        });
+
+        // 3. Wait like a human (hold time)
+        await new Promise(r => setTimeout(r, 80));
+
+        // 4. Release
+        await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", { 
+            type: "keyUp", 
+            key: def.key, 
+            code: def.code,
+            modifiers 
+        });
+    } catch(e) {
+        console.error("Key Error:", e);
+    }
 }
