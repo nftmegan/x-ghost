@@ -9,7 +9,7 @@ module.exports = {
   entry: {
     background: './src/entry/background.js',
     content: './src/entry/content.js',
-    popup: './src/popup/popup.js',
+    // popup: './src/popup/popup.js', // REMOVED: No longer used
     dashboard: './src/dashboard/dashboard.js'
   },
   output: {
@@ -36,8 +36,6 @@ module.exports = {
       patterns: [
         { from: "src/manifest.json", to: "manifest.json" },
         { from: "src/assets", to: "assets" },
-        { from: "src/popup/popup.html", to: "popup.html" },
-        { from: "src/popup/popup.css", to: "popup.css" },
         { from: "src/dashboard/dashboard.html", to: "dashboard.html" },
         { from: "src/dashboard/dashboard.css", to: "dashboard.css" }
       ],

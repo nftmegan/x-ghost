@@ -8,27 +8,42 @@ export const Panel = {
     init() {
         if (document.getElementById('ghost-panel')) return;
 
-        // 1. Inject CSS Styles
         const style = document.createElement('style');
         style.textContent = `
             #ghost-panel {
-                position: fixed; bottom: 20px; left: 20px;
-                background: rgba(10, 10, 10, 0.95); color: #e0e0e0;
-                border: 1px solid #333; border-radius: 8px;
-                padding: 12px; font-family: 'Segoe UI', system-ui, sans-serif; font-size: 12px;
-                z-index: 2147483647; width: 280px; 
+                position: fixed; 
+                top: 20px; 
+                bottom: 20px; 
+                left: 20px;
+                width: 280px; /* Fixed width as requested */
+                background: rgba(10, 10, 10, 0.95); 
+                color: #e0e0e0;
+                border: 1px solid #333; 
+                border-radius: 8px;
+                padding: 12px; 
+                font-family: 'Segoe UI', system-ui, sans-serif; 
+                font-size: 12px;
+                z-index: 2147483647; 
                 box-shadow: 0 8px 32px rgba(0,0,0,0.5);
                 backdrop-filter: blur(8px);
                 transition: opacity 0.2s;
                 user-select: none;
+                
+                /* FLEX LAYOUT FOR FULL HEIGHT */
+                display: flex;
+                flex-direction: column;
             }
             #ghost-panel:hover { opacity: 1; }
             
-            .ghost-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #333; }
+            .ghost-header { 
+                display: flex; justify-content: space-between; align-items: center; 
+                margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #333; 
+                flex-shrink: 0;
+            }
             .ghost-title { font-weight: 700; font-size: 14px; color: #fff; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;}
             
             .ghost-status { 
-                padding: 3px 8px;yb border-radius: 4px; font-weight: 700; font-size: 10px; 
+                padding: 3px 8px; border-radius: 4px; font-weight: 700; font-size: 10px; 
                 background: #222; color: #777; border: 1px solid #333; letter-spacing: 0.5px;
                 transition: all 0.3s;
             }
@@ -37,44 +52,46 @@ export const Panel = {
                 box-shadow: 0 0 8px rgba(0, 255, 65, 0.2);
             }
 
-            /* SCROLLING LOG CONSOLE */
+            /* FLEXIBLE CONSOLE AREA */
             .ghost-console {
-                height: 120px;
+                flex-grow: 1; /* Fills all remaining height */
                 overflow-y: auto;
                 background: #000;
                 border: 1px solid #222;
                 border-radius: 4px;
-                padding: 6px;
+                padding: 8px;
                 margin-bottom: 10px;
                 display: flex;
-                flex-direction: column-reverse; /* Newest at bottom visually if we prepend, or column if append */
+                flex-direction: column-reverse; 
             }
             
             .log-entry {
                 font-family: 'Consolas', 'Monaco', monospace;
                 font-size: 11px;
-                margin-bottom: 3px;
-                line-height: 1.3;
+                margin-bottom: 4px;
+                line-height: 1.4;
                 color: #888;
                 border-bottom: 1px solid #111;
+                word-wrap: break-word;
             }
-            .log-entry:first-child { color: #00ff41; font-weight: 600; } /* Highlight most recent */
+            .log-entry:first-child { color: #00ff41; font-weight: 600; } 
             .log-entry.error { color: #ff4444; }
             .log-entry .time { color: #555; margin-right: 4px; font-size: 10px; }
 
-            /* SCROLLBAR */
             .ghost-console::-webkit-scrollbar { width: 4px; }
             .ghost-console::-webkit-scrollbar-track { background: #111; }
             .ghost-console::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
 
-            .ghost-footer { display: flex; justify-content: space-between; align-items: center; color: #666; font-size: 11px; }
+            .ghost-footer { 
+                display: flex; justify-content: space-between; align-items: center; 
+                color: #666; font-size: 11px; flex-shrink: 0;
+            }
             .key-badge { background: #2a2a2a; padding: 2px 5px; border-radius: 4px; color: #eee; border: 1px solid #444; font-size: 10px;}
             .dash-link { color: #1d9bf0; text-decoration: none; cursor: pointer; transition: color 0.2s; font-weight: 600;}
             .dash-link:hover { color: #fff; text-decoration: underline; }
         `;
         document.head.appendChild(style);
 
-        // 2. Create Panel HTML
         this.el = document.createElement('div');
         this.el.id = 'ghost-panel';
         this.el.innerHTML = `
@@ -84,7 +101,7 @@ export const Panel = {
             </div>
             
             <div id="ghost-console" class="ghost-console">
-                <div class="log-entry">System ready... waiting for Alt+S</div>
+                <div class="log-entry">UI Initialized. Height Maximized.</div>
             </div>
 
             <div class="ghost-footer">
@@ -97,7 +114,6 @@ export const Panel = {
         this.statusEl = this.el.querySelector('#ghost-status');
         this.logContainer = this.el.querySelector('#ghost-console');
 
-        // 3. Link Dashboard
         this.el.querySelector('#ghost-dash-link').addEventListener('click', () => {
             chrome.runtime.sendMessage({ action: "OPEN_DASHBOARD" });
         });
@@ -116,20 +132,12 @@ export const Panel = {
 
     log(msg, type = 'info') {
         if (!this.logContainer) return;
-        
-        const time = new Date().toLocaleTimeString().split(' ')[0]; // 10:45:12
-        
+        const time = new Date().toLocaleTimeString().split(' ')[0];
         const entry = document.createElement('div');
         entry.className = type === 'error' ? 'log-entry error' : 'log-entry';
-        
-        // Clean up emojis for cleaner console look if desired, or keep them
         entry.innerHTML = `<span class="time">[${time}]</span> ${msg}`;
-        
-        // Add to top (so user sees newest immediately without scrolling)
         this.logContainer.prepend(entry);
-        
-        // Limit history to 50 lines to prevent memory issues
-        if (this.logContainer.children.length > 50) {
+        if (this.logContainer.children.length > 100) {
             this.logContainer.removeChild(this.logContainer.lastChild);
         }
     }

@@ -10,20 +10,10 @@ import { wait, random, randomGaussian, getElementCenter } from '../utils/helpers
 let isRunning = false;
 let config = { ...CONFIG };
 
-// Helper to log to both internal storage and the visual panel
 const Log = {
-    info: (msg) => { 
-        Logger.info(msg); 
-        Panel.log(msg, 'info'); 
-    },
-    error: (msg) => { 
-        Logger.error(msg); 
-        Panel.log(msg, 'error'); 
-    },
-    // Special logger for "Thinking" states that doesn't save to DB (too spammy)
-    think: (msg) => {
-        Panel.log(`💭 ${msg}`, 'info');
-    }
+    info: (msg) => { Logger.info(msg); Panel.log(msg, 'info'); },
+    error: (msg) => { Logger.error(msg); Panel.log(msg, 'error'); },
+    think: (msg) => { Panel.log(`💭 ${msg}`, 'info'); }
 };
 
 const Bot = {
@@ -32,18 +22,15 @@ const Bot = {
         isRunning = true;
         
         Panel.setStatus(true);
-        GhostCursor.init();
+        GhostCursor.init(); // Ensure visibility
         
-        // Load latest config
         const storage = await chrome.storage.local.get("config");
         if (storage.config) config = { ...config, ...storage.config };
         
-        // Attach Debugger
         chrome.runtime.sendMessage({ action: "ATTACH_DEBUGGER" });
-        Log.info(`System Started. Sim Mode: ${config.SIMULATION_MODE}`);
+        Log.info(`Cycle Started. Safe Mode: ON`);
         
-        // Ensure focus
-        document.body.click();
+        document.body.click(); // Ensure focus
         
         this.loop();
     },
@@ -51,42 +38,58 @@ const Bot = {
     stop() {
         isRunning = false;
         Panel.setStatus(false);
-        Log.info("System Stopped by User.");
+        Log.info("Cycle Stopped.");
     },
     
     async loop() {
         while (isRunning) {
-            // --- STEP 1: NAVIGATION ---
-            Log.think("Pressing 'J' to navigate...");
-            await this.sendKey("j");
+            // --- PHASE 1: NAVIGATION ---
+            const navChance = Math.random();
             
-            // --- STEP 2: READING (HUMAN DELAY) ---
+            // Correction (5%)
+            if (navChance < 0.05) {
+                Log.think("Correction: Overshot...");
+                if (Math.random() > 0.5) await this.sendKey("k");
+                else await this.scrollSmoothly(-200);
+                await wait(random(1000, 2000));
+            }
+            // Mouse Scroll (30%)
+            else if (navChance < 0.35) {
+                Log.think("Nav: Mouse Scroll");
+                await this.parkMouse(); // Keep mouse safe
+                await this.scrollSmoothly(random(300, 600));
+                await wait(random(500, 1200));
+                await this.sendKey("j"); // Snap focus
+            } 
+            // Key J (65%)
+            else {
+                Log.think("Nav: Key 'J'");
+                await this.sendKey("j");
+            }
+            
+            // --- PHASE 2: READING ---
             const readTime = randomGaussian(1500, 4500); 
-            Log.think(`Reading tweet... (${Math.floor(readTime)}ms)`);
+            Log.think(`Reading (${Math.floor(readTime)}ms)...`);
             await wait(readTime);
             
             if (!isRunning) break;
 
-            // --- STEP 3: SCANNING ---
+            // --- PHASE 3: SCANNING ---
             const tweet = Scanner.readActiveTweet();
             if (!tweet) {
-                Log.think("No valid tweet found, skipping...");
-                await wait(1000); 
+                Log.think("No valid tweet. Skipping.");
+                await wait(800); 
                 continue;
             }
 
-            // --- STEP 4: DECISION ---
+            // --- PHASE 4: DECISION ---
             if (Scanner.hasKeyword(tweet.text, config.KEYWORDS)) {
-                Log.info(`MATCH FOUND: "${tweet.text.substring(0, 30)}..."`);
-                
+                Log.info(`MATCH: "${tweet.text.substring(0, 30)}..."`);
                 await this.performReply(tweet);
                 
-                // Long cooldown after action
                 const cooldown = randomGaussian(10000, 25000); 
-                Log.think(`Cooldown active (${Math.floor(cooldown/1000)}s)...`);
+                Log.think(`Cooling down (${Math.floor(cooldown/1000)}s)...`);
                 await wait(cooldown);
-            } else {
-                Log.think("No keywords matched.");
             }
         }
     },
@@ -94,32 +97,34 @@ const Bot = {
     async performReply(tweet) {
         const replyText = config.REPLIES[random(0, config.REPLIES.length - 1)];
         
-        Log.think("Moving mouse to tweet...");
-        const tweetCenter = getElementCenter(tweet.element);
-        await chrome.runtime.sendMessage({ action: "MOVE_MOUSE", x: tweetCenter.x, y: tweetCenter.y });
-        await wait(random(300, 800));
-
-        Log.think("Opening reply modal ('R')...");
+        // 1. Park mouse safely before opening anything
+        // This prevents the "random movement" inside the modal
+        await this.parkMouse();
+        
+        Log.think("Opening reply modal...");
         await this.sendKey("r");
-        await wait(2500); 
+        await wait(2500); // Wait for animation
 
         const inputEl = document.querySelector(SELECTORS.INPUT_YZ);
         if (!inputEl) {
-            Log.error("Modal failed to open.");
+            Log.error("Modal failed to load.");
             await this.sendKey("Escape");
             return;
         }
 
-        Log.think(`Typing reply: "${replyText}"`);
-        constTX = getElementCenter(inputEl);
-        await chrome.runtime.sendMessage({ action: "MOVE_MOUSE", x: constTX.x, y: constTX.y });
+        Log.think(`Typing reply...`);
+        // Note: We do NOT move the mouse to the input box anymore.
+        // We just type while the mouse is safely parked.
+        
+        // This 'await' now waits for the BACKGROUND process to fully finish typing
+        // regardless of how long it takes. No more cut-offs.
         await chrome.runtime.sendMessage({ action: "TYPE", text: replyText });
         
-        // Wait based on typing length
-        await wait(replyText.length * 50 + 1000);
+        // Extra human hesitation after typing finishes
+        await wait(random(800, 1500));
 
         if (config.SIMULATION_MODE) {
-            Log.info("SIMULATION: Discarding draft.");
+            Log.info("SIM: Discarding.");
             await this.sendKey("Escape");
             await wait(800);
             
@@ -130,13 +135,27 @@ const Bot = {
                 await chrome.runtime.sendMessage({ action: "CLICK" });
             }
         } else {
-            Log.info("SENDING REPLY...");
-            await this.sendKey("Enter", 2); // Ctrl+Enter
+            Log.info("SENDING.");
+            await this.sendKey("Enter", 2); // Ctrl + Enter
             await Database.add({ type: "REPLY", text: replyText, target: tweet.user });
         }
         
         await wait(2000);
-        Log.info("Reply sequence complete.");
+        await this.parkMouse(); // Ensure we end parked
+    },
+
+    async parkMouse() {
+        const { innerWidth, innerHeight } = window;
+        // Park in the right 15% of the screen, middle height
+        const safeX = innerWidth - (innerWidth * 0.15) + random(-20, 20); 
+        const safeY = (innerHeight / 2) + random(-100, 100); 
+        
+        await chrome.runtime.sendMessage({ action: "MOVE_MOUSE", x: safeX, y: safeY });
+    },
+
+    async scrollSmoothly(amount) {
+        window.scrollBy({ top: amount, behavior: 'smooth' });
+        await wait(500);
     },
 
     async sendKey(key, modifier = 0) {
@@ -144,14 +163,11 @@ const Bot = {
     }
 };
 
-// --- INITIALIZATION ---
-
-// 1. Inject the UI immediately
+// --- INIT ---
 Panel.init();
+GhostCursor.init();
 
-// 2. Listen for Alt+S (The Hotkey)
 document.addEventListener('keydown', (e) => {
-    // Alt + S
     if (e.altKey && e.code === 'KeyS') {
         e.preventDefault();
         if (isRunning) Bot.stop();
@@ -159,7 +175,6 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// 3. Listen for Popup/Background Messages
 chrome.runtime.onMessage.addListener((req) => {
     if (req.action === "START_BOT") Bot.start();
     if (req.action === "STOP_BOT") Bot.stop();
