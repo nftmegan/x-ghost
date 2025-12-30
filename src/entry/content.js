@@ -1,4 +1,5 @@
 import { CONFIG } from '../config/constants.js';
+import { DEFAULT_GM_SETTINGS, DEFAULT_GM_CORPUS } from '../config/gm-reply-corpus.js';
 import { SELECTORS } from '../config/selectors.js';
 import { Logger } from '../core/logger.js';
 import { Database } from '../core/database.js';
@@ -6,9 +7,12 @@ import { GhostCursor } from '../features/ghost-cursor.js';
 import { Scanner } from '../features/scanner.js';
 import { Panel } from '../features/ui-panel.js';
 import { wait, random, randomGaussian, getElementCenter } from '../utils/helpers.js';
+import { GmReplyEngine } from '../features/gm-reply-engine.js';
 
 let isRunning = false;
 let config = { ...CONFIG };
+let gmConfig = { ...DEFAULT_GM_SETTINGS }; 
+let gmCorpus = { ...DEFAULT_GM_CORPUS };
 
 const Log = {
     info: (msg) => { Logger.info(msg); Panel.log(msg, 'info'); },
@@ -22,16 +26,19 @@ const Bot = {
         isRunning = true;
         
         Panel.setStatus(true);
-        GhostCursor.init(); // Ensure visibility
+        GhostCursor.init(); 
         
-        const storage = await chrome.storage.local.get("config");
+        // LOAD CONFIGURATION
+        const storage = await chrome.storage.local.get(["config", "gmSettings", "gmCorpus"]);
         if (storage.config) config = { ...config, ...storage.config };
-        
+        // Shallow merge is fine here as we load full objects in dashboard save
+        if (storage.gmSettings) gmConfig = { ...gmConfig, ...storage.gmSettings }; 
+        if (storage.gmCorpus) gmCorpus = { ...gmCorpus, ...storage.gmCorpus };
+
         chrome.runtime.sendMessage({ action: "ATTACH_DEBUGGER" });
         Log.info(`Cycle Started. Safe Mode: ON`);
         
-        document.body.click(); // Ensure focus
-        
+        document.body.click(); 
         this.loop();
     },
     
@@ -43,38 +50,32 @@ const Bot = {
     
     async loop() {
         while (isRunning) {
-            // --- PHASE 1: NAVIGATION ---
             const navChance = Math.random();
             
-            // Correction (5%)
             if (navChance < 0.05) {
                 Log.think("Correction: Overshot...");
                 if (Math.random() > 0.5) await this.sendKey("k");
                 else await this.scrollSmoothly(-200);
                 await wait(random(1000, 2000));
             }
-            // Mouse Scroll (30%)
             else if (navChance < 0.35) {
                 Log.think("Nav: Mouse Scroll");
-                await this.parkMouse(); // Keep mouse safe
+                await this.parkMouse(); 
                 await this.scrollSmoothly(random(300, 600));
                 await wait(random(500, 1200));
-                await this.sendKey("j"); // Snap focus
+                await this.sendKey("j"); 
             } 
-            // Key J (65%)
             else {
                 Log.think("Nav: Key 'J'");
                 await this.sendKey("j");
             }
             
-            // --- PHASE 2: READING ---
             const readTime = randomGaussian(1500, 4500); 
             Log.think(`Reading (${Math.floor(readTime)}ms)...`);
             await wait(readTime);
             
             if (!isRunning) break;
 
-            // --- PHASE 3: SCANNING ---
             const tweet = Scanner.readActiveTweet();
             if (!tweet) {
                 Log.think("No valid tweet. Skipping.");
@@ -82,7 +83,6 @@ const Bot = {
                 continue;
             }
 
-            // --- PHASE 4: DECISION ---
             if (Scanner.hasKeyword(tweet.text, config.KEYWORDS)) {
                 Log.info(`MATCH: "${tweet.text.substring(0, 30)}..."`);
                 await this.performReply(tweet);
@@ -95,15 +95,15 @@ const Bot = {
     },
 
     async performReply(tweet) {
-        const replyText = config.REPLIES[random(0, config.REPLIES.length - 1)];
+        // PASS SETTINGS AND CORPUS TO ENGINE
+        const replyText = GmReplyEngine.generate(tweet.userClean, tweet.energy, gmConfig, gmCorpus);
         
-        // 1. Park mouse safely before opening anything
-        // This prevents the "random movement" inside the modal
         await this.parkMouse();
         
-        Log.think("Opening reply modal...");
+        Log.think(`Generated: "${replyText.replace(/\n/g, ' ')}"`);
+        
         await this.sendKey("r");
-        await wait(2500); // Wait for animation
+        await wait(2500); 
 
         const inputEl = document.querySelector(SELECTORS.INPUT_YZ);
         if (!inputEl) {
@@ -113,14 +113,7 @@ const Bot = {
         }
 
         Log.think(`Typing reply...`);
-        // Note: We do NOT move the mouse to the input box anymore.
-        // We just type while the mouse is safely parked.
-        
-        // This 'await' now waits for the BACKGROUND process to fully finish typing
-        // regardless of how long it takes. No more cut-offs.
         await chrome.runtime.sendMessage({ action: "TYPE", text: replyText });
-        
-        // Extra human hesitation after typing finishes
         await wait(random(800, 1500));
 
         if (config.SIMULATION_MODE) {
@@ -136,17 +129,16 @@ const Bot = {
             }
         } else {
             Log.info("SENDING.");
-            await this.sendKey("Enter", 2); // Ctrl + Enter
-            await Database.add({ type: "REPLY", text: replyText, target: tweet.user });
+            await this.sendKey("Enter", 2); 
+            await Database.add({ type: "REPLY", text: replyText, target: tweet.userRaw });
         }
         
         await wait(2000);
-        await this.parkMouse(); // Ensure we end parked
+        await this.parkMouse(); 
     },
 
     async parkMouse() {
         const { innerWidth, innerHeight } = window;
-        // Park in the right 15% of the screen, middle height
         const safeX = innerWidth - (innerWidth * 0.15) + random(-20, 20); 
         const safeY = (innerHeight / 2) + random(-100, 100); 
         
@@ -163,7 +155,6 @@ const Bot = {
     }
 };
 
-// --- INIT ---
 Panel.init();
 GhostCursor.init();
 

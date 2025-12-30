@@ -4,13 +4,26 @@
     <meta charset="UTF-8">
     <title>Ghost Bot Dashboard</title>
     <link rel="stylesheet" href="dashboard.css">
+    <style>
+        /* Specific tweaks for dashboard readability */
+        .setting-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #222; padding-bottom: 10px; }
+        .setting-label { font-size: 13px; color: #ccc; }
+        .subsection { margin-left: 15px; margin-bottom: 25px; padding-left: 10px; border-left: 2px solid #333; }
+        input[type="range"] { width: 100px; margin-right: 10px; vertical-align: middle; }
+        
+        .corpus-group { margin-bottom: 20px; }
+        .corpus-label { display: block; margin-bottom: 5px; color: #1d9bf0; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+        textarea.corpus-input { font-family: monospace; font-size: 11px; height: 80px; width: 100%; border: 1px solid #333; background: #111; color: #aaa; padding: 8px; border-radius: 4px; resize: vertical; }
+        textarea.corpus-input:focus { border-color: #1d9bf0; color: #fff; outline: none; }
+    </style>
 </head>
 <body>
     <div class="app-container">
         <nav class="sidebar">
             <div class="logo">Ghost Bot 👻</div>
             <ul class="menu">
-                <li class="menu-item active" data-tab="config">⚙️ Configuration</li>
+                <li class="menu-item active" data-tab="config">⚙️ General</li>
+                <li class="menu-item" data-tab="gm-strategy">🧠 GM Strategy</li>
                 <li class="menu-item" data-tab="database">📊 Activity Log</li>
             </ul>
         </nav>
@@ -18,8 +31,7 @@
         <main class="content">
             
             <section id="tab-config" class="tab-content active">
-                <h2>Bot Configuration</h2>
-                
+                <h2>General Configuration</h2>
                 <div class="card">
                     <h3>Simulation Mode</h3>
                     <p class="hint">Enable this to test the bot without actually posting replies.</p>
@@ -30,22 +42,112 @@
                         </label>
                     </div>
                 </div>
-
                 <div class="card">
                     <h3>Targeting</h3>
                     <div class="form-group">
                         <label>Keywords (comma separated)</label>
-                        <input type="text" id="conf-keywords" placeholder="gm, good morning, rise and shine">
+                        <input type="text" id="conf-keywords" placeholder="gm, good morning">
                     </div>
-                    <div class="form-group">
-                        <label>Reply Templates (one per line)</label>
-                        <textarea id="conf-replies" rows="8" placeholder="GM! ☕️&#10;Rise and grind!"></textarea>
+                </div>
+                <div class="actions">
+                    <button id="btn-save-general" class="btn primary">Save General Settings</button>
+                    <span id="save-msg-general" class="fade-msg">Saved!</span>
+                </div>
+            </section>
+
+            <section id="tab-gm-strategy" class="tab-content">
+                <h2>Organic GM Algorithm</h2>
+                
+                <div class="card">
+                    <h3>1. Probabilities & Behavior</h3>
+                    <div class="subsection">
+                        <div class="setting-row">
+                            <span class="setting-label">Add Name Chance</span>
+                            <div><input type="range" min="0" max="1" step="0.05" id="slider-addressee"><span id="val-addressee"></span></div>
+                        </div>
+                        <div class="setting-row">
+                            <span class="setting-label">Add Extension Chance</span>
+                            <div><input type="range" min="0" max="1" step="0.05" id="slider-extension"><span id="val-extension"></span></div>
+                        </div>
+                        <div class="setting-row">
+                            <span class="setting-label">Add Sign-off Chance</span>
+                            <div><input type="range" min="0" max="1" step="0.05" id="slider-signoff"><span id="val-signoff"></span></div>
+                        </div>
+                        <div class="setting-row">
+                            <span class="setting-label">Lazy Mode Chance</span>
+                            <div><input type="range" min="0" max="0.5" step="0.01" id="slider-lazy"><span id="val-lazy"></span></div>
+                        </div>
+                        <div class="setting-row">
+                            <span class="setting-label">Emoji Separator Weight</span>
+                            <div><input type="range" min="0" max="1" step="0.05" id="slider-emoji"><span id="val-emoji"></span></div>
+                        </div>
+                        <div class="setting-row">
+                            <span class="setting-label">Double Line Break Chance</span>
+                            <div><input type="range" min="0" max="1" step="0.05" id="slider-doublebreak"><span id="val-doublebreak"></span></div>
+                        </div>
+                        <div class="setting-row">
+                            <span class="setting-label">Typo Chance</span>
+                            <div><input type="range" min="0" max="0.1" step="0.001" id="slider-typo"><span id="val-typo"></span></div>
+                        </div>
+                        <div class="setting-row">
+                            <span class="setting-label">Force Lowercase Extension</span>
+                            <input type="checkbox" id="check-lowercase-ext">
+                        </div>
+                        <div class="setting-row">
+                            <span class="setting-label">Force Lowercase Sign-off</span>
+                            <input type="checkbox" id="check-lowercase-signoff">
+                        </div>
+                        <div class="setting-row">
+                            <span class="setting-label">Sentiment Analysis</span>
+                            <input type="checkbox" id="check-sentiment">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>2. Text Corpus (One phrase per line)</h3>
+                    <p class="hint">Customize the vocabulary. Changes apply immediately after saving.</p>
+                    
+                    <div class="corpus-group">
+                        <label class="corpus-label">Openers (Neutral)</label>
+                        <textarea id="txt-openers-neutral" class="corpus-input"></textarea>
+                    </div>
+                    <div class="corpus-group">
+                        <label class="corpus-label">Openers (Bullish 📈)</label>
+                        <textarea id="txt-openers-bullish" class="corpus-input"></textarea>
+                    </div>
+                    <div class="corpus-group">
+                        <label class="corpus-label">Openers (Bearish 📉)</label>
+                        <textarea id="txt-openers-bearish" class="corpus-input"></textarea>
+                    </div>
+                    
+                    <div class="corpus-group">
+                        <label class="corpus-label">Addressees (Names)</label>
+                        <textarea id="txt-addressees" class="corpus-input"></textarea>
+                    </div>
+                    
+                    <div class="corpus-group">
+                        <label class="corpus-label">Questions (Extension)</label>
+                        <textarea id="txt-ext-questions" class="corpus-input"></textarea>
+                    </div>
+                    <div class="corpus-group">
+                        <label class="corpus-label">Day Variations (Extension)</label>
+                        <textarea id="txt-ext-days" class="corpus-input"></textarea>
+                    </div>
+                    
+                    <div class="corpus-group">
+                        <label class="corpus-label">Sign-offs (Line 2)</label>
+                        <textarea id="txt-signoffs" class="corpus-input"></textarea>
+                    </div>
+                    <div class="corpus-group">
+                        <label class="corpus-label">Lazy Overrides</label>
+                        <textarea id="txt-lazy" class="corpus-input"></textarea>
                     </div>
                 </div>
 
                 <div class="actions">
-                    <button id="btn-save" class="btn primary">Save Settings</button>
-                    <span id="save-msg" class="fade-msg">Saved!</span>
+                    <button id="btn-save-gm" class="btn primary">Save GM Strategy</button>
+                    <span id="save-msg-gm" class="fade-msg">Saved!</span>
                 </div>
             </section>
 
@@ -57,7 +159,6 @@
                         <button id="btn-clear" class="btn danger">Clear History</button>
                     </div>
                 </div>
-                
                 <div class="table-container">
                     <table>
                         <thead>
@@ -67,8 +168,7 @@
                                 <th>Content</th>
                             </tr>
                         </thead>
-                        <tbody id="table-body">
-                            </tbody>
+                        <tbody id="table-body"></tbody>
                     </table>
                 </div>
             </section>

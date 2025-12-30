@@ -1,5 +1,3 @@
-// src/features/ui-panel.js
-
 export const Panel = {
     el: null,
     statusEl: null,
@@ -15,7 +13,8 @@ export const Panel = {
                 top: 20px; 
                 bottom: 20px; 
                 left: 20px;
-                width: 280px; /* Fixed width as requested */
+                /* FIXED: 280px Enforced with !important */
+                width: 280px !important; 
                 background: rgba(10, 10, 10, 0.95); 
                 color: #e0e0e0;
                 border: 1px solid #333; 
@@ -28,8 +27,6 @@ export const Panel = {
                 backdrop-filter: blur(8px);
                 transition: opacity 0.2s;
                 user-select: none;
-                
-                /* FLEX LAYOUT FOR FULL HEIGHT */
                 display: flex;
                 flex-direction: column;
             }
@@ -52,9 +49,8 @@ export const Panel = {
                 box-shadow: 0 0 8px rgba(0, 255, 65, 0.2);
             }
 
-            /* FLEXIBLE CONSOLE AREA */
             .ghost-console {
-                flex-grow: 1; /* Fills all remaining height */
+                flex-grow: 1; 
                 overflow-y: auto;
                 background: #000;
                 border: 1px solid #222;
@@ -94,16 +90,17 @@ export const Panel = {
 
         this.el = document.createElement('div');
         this.el.id = 'ghost-panel';
+        // Force width inline for immediate effect to prevent FOUC
+        this.el.style.cssText = "width: 280px !important; display: flex; flex-direction: column;";
+        
         this.el.innerHTML = `
             <div class="ghost-header">
                 <span class="ghost-title">👻 Ghost Bot</span>
                 <span id="ghost-status" class="ghost-status">STOPPED</span>
             </div>
-            
             <div id="ghost-console" class="ghost-console">
-                <div class="log-entry">UI Initialized. Height Maximized.</div>
+                <div class="log-entry">UI Initialized. Ready.</div>
             </div>
-
             <div class="ghost-footer">
                 <span>Toggle: <span class="key-badge">Alt</span> + <span class="key-badge">S</span></span>
                 <a id="ghost-dash-link" class="dash-link">Dashboard ↗</a>
